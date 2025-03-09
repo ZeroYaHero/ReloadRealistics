@@ -1,0 +1,3 @@
+[submodule "FN_Gameplay"]
+	path = FN_Gameplay
+	url = https://github.com/ZeroYaHero/FNGameplay.git
