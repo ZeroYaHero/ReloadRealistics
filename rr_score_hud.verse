@@ -8,15 +8,7 @@ using { /Fortnite.com/UI }
 
 using { FN_Gameplay }
 
-foo(t:type) := interface{}
-
-bar := class(foo(int), foo(float)):
-
-
-
 hud_verse_tag := class(tag){}
-    win_round_hud_tag := class(hud_verse_tag){}
-    lose_round_hud_tag := class(hud_verse_tag){}
     generic_popup_dialog_tag := class(hud_verse_tag){}
     generic_hud_message_tag := class(hud_verse_tag){}
     watermark_hud_tag := class(hud_verse_tag){}

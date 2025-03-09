@@ -22,6 +22,8 @@ gameflow_verse_tag := class(tag){}
     end_game_device_tag := class(gameflow_verse_tag){}
     basic_storm_tag := class(gameflow_verse_tag){}
     supply_drops_tag := class(gameflow_verse_tag){}
+    win_round_tag := class(gameflow_verse_tag){}
+    lose_round_tag := class(gameflow_verse_tag){}
 
 rr_gameflow_controller := class:
 
@@ -424,6 +426,8 @@ rr_gameflow_devices := struct:
     AllTeamSettings : team_settings_and_inventory_device
     NotEnoughPlayersHUD : hud_message_device
     RoundSettings : round_settings_device
+    WonRoundXP : accolades_device
+    PlayedRoundXP : accolades_device
     AutoStartVoteTimer : timer_device
     AutoStartVoteUI : popup_dialog_device
     AutoStartFailedHUD : hud_message_device

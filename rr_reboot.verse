@@ -15,10 +15,10 @@ using { FN_Gameplay }
 # TODO: Tab spacing should be consistent for all things (like editables). Same for spacing on classes.
 
 reboot_verse_tag := class(tag){}
-    reboot_respawn_timer_tag := class(reboot_verse_tag){}
+    reboot_respawn_tag := class(reboot_verse_tag){}
     reboot_status_timer_center_tag := class(reboot_verse_tag){}
     reboot_status_timer_corner_tag := class(reboot_verse_tag){}
-    team_wipe_hud_tag := class(reboot_verse_tag){}
+    team_wipe_tag := class(reboot_verse_tag){}
     reboot_granted_item_tag := class(reboot_verse_tag){}
     reboot_skyzone_tag := class(reboot_verse_tag){}
     reboot_disabled_hud_tag := class(reboot_verse_tag){}
@@ -62,7 +62,9 @@ rr_reboot_parameters := class<concrete>:
 rr_reboot_devices := struct:
     
     TeamWipeHUD : hud_message_device
-    RespawnTimerDevice : timer_device
+    TeamWipeXP : accolades_device
+    RebootTimerDevice : timer_device
+    RebootXP : accolades_device
     StatusTimerCenterHUD : custom_hud_timer
     StatusTimerCornerHUD : custom_hud_timer
     DisabledHUD : hud_message_device
@@ -236,30 +238,30 @@ rr_reboot_manager := class:
 
     AwaitRebootCountdown<private>(InAgent : agent)<suspends>:logic =
         defer:
-            RebootDevices.RespawnTimerDevice.Reset(InAgent)
+            RebootDevices.RebootTimerDevice.Reset(InAgent)
         if:
             TeamIndex := TeamPlayerManager.GetTeamIndex[InAgent]
             TeamCauseKnockEvent := GetTeamCauseKnockEvent[TeamIndex]
             TeamCauseEliminationEvent := GetTeamCauseEliminationEvent[TeamIndex]
             TimeToReboot := CurrentRebootState?.TimeToReboot
         then:
-            RebootDevices.RespawnTimerDevice.SetActiveDuration(TimeToReboot, InAgent)
-            RebootDevices.RespawnTimerDevice.Start(InAgent)
-            RebootDevices.RespawnTimerDevice.SetActiveDuration(TimeToReboot, InAgent)
+            RebootDevices.RebootTimerDevice.SetActiveDuration(TimeToReboot, InAgent)
+            RebootDevices.RebootTimerDevice.Start(InAgent)
+            RebootDevices.RebootTimerDevice.SetActiveDuration(TimeToReboot, InAgent)
             branch:
                 TeamTimeSkips := sync:
                     loop:
                         KnockResult := TeamCauseKnockEvent.Await()
-                        RebootDevices.RespawnTimerDevice.SetActiveDuration(RebootDevices.RespawnTimerDevice.GetActiveDuration(InAgent) - RebootParameters.KnockSkip, InAgent)
+                        RebootDevices.RebootTimerDevice.SetActiveDuration(RebootDevices.RebootTimerDevice.GetActiveDuration(InAgent) - RebootParameters.KnockSkip, InAgent)
                     loop:
                         EliminationResult := TeamCauseEliminationEvent.Await()
-                        RebootDevices.RespawnTimerDevice.SetActiveDuration(RebootDevices.RespawnTimerDevice.GetActiveDuration(InAgent) - RebootParameters.EliminationSkip, InAgent)
+                        RebootDevices.RebootTimerDevice.SetActiveDuration(RebootDevices.RebootTimerDevice.GetActiveDuration(InAgent) - RebootParameters.EliminationSkip, InAgent)
                     loop:
                         TeamWiperIndex := TeamWipeEvent.Await()
                         if(TeamWiperIndex = TeamIndex):
-                            RebootDevices.RespawnTimerDevice.SetActiveDuration(RebootDevices.RespawnTimerDevice.GetActiveDuration(InAgent) - RebootParameters.TeamWipeSkip, InAgent)
+                            RebootDevices.RebootTimerDevice.SetActiveDuration(RebootDevices.RebootTimerDevice.GetActiveDuration(InAgent) - RebootParameters.TeamWipeSkip, InAgent)
             Timer := loop:
-                MaybeAgent := RebootDevices.RespawnTimerDevice.SuccessEvent.Await()
+                MaybeAgent := RebootDevices.RebootTimerDevice.SuccessEvent.Await()
                 if(MaybeAgent? = InAgent):
                     break
             true

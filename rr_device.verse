@@ -1,10 +1,16 @@
-using { /Verse.org/Simulation/Tags }
 using { /UnrealEngine.com/Temporary }
+using { /Verse.org/Simulation/Tags }
+using { /Fortnite.com/Playspaces }
 using { /Fortnite.com/Devices }
 using { /Verse.org/Simulation }
 using { /Verse.org/Random }
 
 using { FN_Gameplay }
+
+var <internal>MainDevicePlayspaceMap<internal> : weak_map(session, fort_playspace) = map{}
+
+GetMainDevicePlayspace():fort_playspace = 
+    MainDevicePlayspaceMap[GetSession()] or PrintAndErr("Tried to get MainDevicePlayspace before set")
 
 # Change to RR device
 rr_device := class(creative_device):
@@ -69,16 +75,21 @@ rr_device := class(creative_device):
 
     # TODO: Debug Settings? Allows one player only, test players, etc.
     OnBegin<override>()<suspends>:void =
-        LinkLinearStates(LinearStates, LinearStateLinks)
-        InitializeGlobalLinearStates(LinearStates)
+        if:
+            set MainDevicePlayspaceMap[GetSession()] = GetPlayspace()
+        then:
+            LinkLinearStates(LinearStates, LinearStateLinks)
+            InitializeGlobalLinearStates(LinearStates)
 
-        DBNODevice := GetTaggedObjects(combat_dbno_device{}, down_but_not_out_device)[0] or PrintAndErr("Could not find DBNO Device!")
-        TeamPlayerManager := BuildTeamPlayerManager(DBNODevice)
-        RebootManager := BuildRebootManager(TeamPlayerManager, DBNODevice)
-        HUDManager := BuildHUDManager()
-        GameflowController := BuildGameflowController(TeamPlayerManager, RebootManager, HUDManager, DBNODevice)
-        
-        ForceState(GetState["NotEnoughPlayers"] or PrintAndErr("Could not start the game and initialize the NotEnoughPlayers State"))
+            DBNODevice := GetTaggedObjects(combat_dbno_device{}, down_but_not_out_device)[0] or PrintAndErr("Could not find DBNO Device!")
+            TeamPlayerManager := BuildTeamPlayerManager(DBNODevice)
+            RebootManager := BuildRebootManager(TeamPlayerManager, DBNODevice)
+            HUDManager := BuildHUDManager()
+            GameflowController := BuildGameflowController(TeamPlayerManager, RebootManager, HUDManager, DBNODevice)
+            
+            ForceState(GetState["NotEnoughPlayers"] or PrintAndErr("Could not start the game and initialize the NotEnoughPlayers State"))
+        else:
+            PrintAndErr("Failed to add MainDevicePlayspace to WeakMap")
 
     BuildTeamPlayerManager<internal>(DBNODevice : down_but_not_out_device):rr_team_and_player_manager =
         TeamPlayerManager := rr_team_and_player_manager:
@@ -145,10 +156,12 @@ rr_device := class(creative_device):
 
     BuildRebootDevices<internal>(DBNODevice : down_but_not_out_device):rr_reboot_devices =
         rr_reboot_devices:
-            RespawnTimerDevice := GetTaggedObjects(reboot_respawn_timer_tag{}, timer_device)[0]                 or PrintAndErr("Could not find RebootRespawnTimer Device!")
+            RebootTimerDevice := GetTaggedObjects(reboot_respawn_tag{}, timer_device)[0]                        or PrintAndErr("Could not find RebootRespawnTimer Device!")
+            RebootXP := GetTaggedObjects(reboot_respawn_tag{}, accolades_device)[0]                             or PrintAndErr("Could not find RebootXP Device")
             DisabledHUD := GetTaggedObjects(reboot_disabled_hud_tag{}, hud_message_device)[0]                   or PrintAndErr("Could not find RebootDisabledHUD Device!")
             ItemGranter := GetTaggedObjects(reboot_granted_item_tag{}, item_granter_device)[0]                  or PrintAndErr("Could not find RebootItemGranter Device!")
-            TeamWipeHUD := GetTaggedObjects(team_wipe_hud_tag{}, hud_message_device)[0]                         or PrintAndErr("Could not find TeanWipeHUD Device!")
+            TeamWipeHUD := GetTaggedObjects(team_wipe_tag{}, hud_message_device)[0]                             or PrintAndErr("Could not find TeanWipeHUD Device!")
+            TeamWipeXP := GetTaggedObjects(reboot_respawn_tag{}, accolades_device)[0]                           or PrintAndErr("Could not find TeamWipeXP Device")
             HoldToRebootTrigger := GetTaggedObjects(hold_to_reboot_input_tag{}, input_trigger_device)[0]        or PrintAndErr("Could not find HoldToRebootInputTrigger Device!")
             HoldToRebootHUDNoAnim := GetTaggedObjects(hold_to_reboot_hud_no_anim{}, hud_message_device)[0]      or PrintAndErr("Could not find HoldToRebootHUDNoAnim Device!")
             HoldToRebootHUDAnim := GetTaggedObjects(hold_to_reboot_hud_anim{}, hud_message_device)[0]           or PrintAndErr("Could not find HoldToRebootHUDAnim Device!")
@@ -164,8 +177,8 @@ rr_device := class(creative_device):
         HUDManager := rr_hud_manager:
             Parameters := HUDParameters
             TeamIndexTintMap := TeamParameters.IndexTintMap()
-            WinRoundHUD := GetTaggedObjects(win_round_hud_tag{}, hud_message_device)[0]     or PrintAndErr("Could not find WinRoundHUD Device!")
-            LoseRoundHUD := GetTaggedObjects(lose_round_hud_tag{}, hud_message_device)[0]   or PrintAndErr("Could not find LoseRoundHUD Device!")
+            WinRoundHUD := GetTaggedObjects(win_round_tag{}, hud_message_device)[0]     or PrintAndErr("Could not find WinRoundHUD Device!")
+            LoseRoundHUD := GetTaggedObjects(lose_round_tag{}, hud_message_device)[0]   or PrintAndErr("Could not find LoseRoundHUD Device!")
             WatermarkHUD := GetTaggedObjects(watermark_hud_tag{}, hud_message_device)[0]    or PrintAndErr("Could not find WatermarkHUD Device!")
         HUDManager.WatermarkHUD.Show()
         HUDManager
@@ -193,6 +206,8 @@ rr_device := class(creative_device):
             AllTeamSettings := GetTaggedObjects(all_team_set_inv_tag{}, team_settings_and_inventory_device)[0]                          or PrintAndErr("Could not find AllTeamSettings Device!")
             NotEnoughPlayersHUD := GetTaggedObjects(not_enough_players_hud_tag{}, hud_message_device)[0]                                or PrintAndErr("Could not find NotEnoughPlayersHUD Device!")
             RoundSettings := GetTaggedObjects(round_settings_tag{}, round_settings_device)[0]                                           or PrintAndErr("Could not find RoundSettings Device!")
+            WonRoundXP := GetTaggedObjects(win_round_tag{}, accolades_device)[0]                                                        or PrintAndErr("Could not find WinRoundXP Device!")
+            PlayedRoundXP := GetTaggedObjects(win_round_tag{}, accolades_device)[0]                                                     or PrintAndErr("Could not find PlayedRoundXP Device!")
             AutoStartVoteTimer := for(Obj : FindCreativeObjectsWithTag(auto_vote_ui_tag{}), Timer := timer_device[Obj]){Timer}[0]       or PrintAndErr("Could not find AutoStartVoteTimer Device!")
             AutoStartVoteUI := for(Obj : FindCreativeObjectsWithTag(auto_vote_ui_tag{}), PopUp := popup_dialog_device[Obj]){PopUp}[0]   or PrintAndErr("Could not find AutoStartVoteUI PopUp Device!")
             AutoStartFailedHUD := for(Obj : FindCreativeObjectsWithTag(auto_vote_ui_tag{}), HUD := hud_message_device[Obj]){HUD}[0]     or PrintAndErr("Could not find AutoStartFailedHUD Device!")
