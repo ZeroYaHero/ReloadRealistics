@@ -51,12 +51,9 @@ rr_poi<public> := class:
     Barriers<public> : []barrier_device
     CenterPositionProp<public> : creative_prop
 
-    Initialize(TeamsAgents : [][]agent, BasicStormController : basic_storm_controller_device)<suspends>:void =
+    Initialize()<suspends>:void =
         if { SetCurrentPOI[Self] }
         EnableBarriers()
-        TeleportTeams(TeamsAgents).Await()
-        if(BasicStormController.TeleportTo[GetCenter()]):
-            BasicStormController.GenerateStorm()
 
     GetCenter()<transacts>:transform =
         CenterPositionProp.GetTransform()
@@ -72,7 +69,7 @@ rr_poi<public> := class:
             Barrier.Enable()
 
     # FIXME: Potential fixme is if the respawning takes too long, are we going to need to check if the player is okay?
-    TeleportTeams(TeamsAgents : [][]agent):[]sticky_task =
+    TeleportTeams(TeamsAgents : [][]agent)<suspends>:void =
         var StickyTasks : []sticky_task = array{}
         if(PairCount := Ceil(TeamsAgents.Length / 2)):
             var Index : int = 0
@@ -90,4 +87,4 @@ rr_poi<public> := class:
                         break
                 else:
                     break
-        StickyTasks
+        StickyTasks.Await()

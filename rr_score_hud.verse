@@ -17,7 +17,7 @@ hud_verse_tag := class(tag){}
 RR_UI := module:
     TeamScoring<public> := module{}
 
-rr_hud_parameters := class<concrete>:
+rr_score_hud_parameters := class<concrete>:
 
     @editable   HorizontalPadding : float = 10.0
     @editable   CrownTeamBlockPadding : float = 5.0
@@ -44,24 +44,15 @@ rr_hud_parameters := class<concrete>:
         X := 35.0
         Y := 60.0
 
-# TODO!: Implement
-rr_hud_devices := struct:
 
-    WinRoundHUD : hud_message_device
-    LoseRoundHUD : hud_message_device
-    Generic2Dialog : popup_dialog_device
-    GenericHUD : hud_message_device
+rr_score_hud_manager := class:
 
-rr_hud_manager := class:
-
-    Parameters : rr_hud_parameters
-    WinRoundHUD : hud_message_device
-    LoseRoundHUD : hud_message_device
+    Parameters : rr_score_hud_parameters
     WatermarkHUD : hud_message_device
-    TeamIndexTintMap : [int]color
+    TeamIndexColorMap : [int]color
     var AgentHUDMap : [agent]rr_score_hud = map{}
 
-    Refresh(TeamsData : []rr_team_data, TeamIndexTeamMembersMap : [int][]agent, TeamScorePairings : []tuple(int, int)):void =
+    Refresh(TeamIndexTeamMembersMap : [int][]agent, TeamScorePairings : []tuple(int, int)):void =
         WatermarkHUD.Show()
         set AgentHUDMap = Dict of for:
             TeamIndex -> TeamMembers : TeamIndexTeamMembersMap
@@ -70,9 +61,9 @@ rr_hud_manager := class:
             if(HUD := AgentHUDMap[TeamMember]):
                 (TeamMember, HUD.Refresh(TeamScorePairings))
             else:
-                (TeamMember, BuildHUD(TeamMember <# Current agent #>, TeamIndex <# Team index belonging #>, TeamsData <# Max potential teams #>, TeamScorePairings <# Teams currently active #>))
+                (TeamMember, BuildHUD(TeamMember <# Current agent #>, TeamIndex <# Team index belonging #>, TeamScorePairings <# Teams currently active #>))
 
-    BuildHUD(InAgent : agent, InTeamIndex : int, TeamsData : []rr_team_data, TeamScorePairings : []tuple(int, int)):rr_score_hud =
+    BuildHUD(InAgent : agent, InTeamIndex : int, TeamScorePairings : []tuple(int, int)):rr_score_hud =
         TeamIndexScoreMap := Dict of TeamScorePairings
 
         TextureBlockSize := vector2:
@@ -83,8 +74,8 @@ rr_hud_manager := class:
         HorizontalTeamStackBox := stack_box:
             Orientation := orientation.Horizontal
             Slots := for:
-                Team : TeamsData
-                TeamTint := TeamIndexTintMap[Team.Parameter.Index]
+                TeamIndex -> TeamColor : TeamIndexColorMap
+                TeamTint := TeamIndexColorMap[TeamIndex]
             do:
                 set TeamBlocksCount += 1
                 
@@ -100,7 +91,7 @@ rr_hud_manager := class:
                     DefaultTint := TeamTint
                     DefaultDesiredSize := TextureBlockSize
 
-                YouUnderTextureBlock.SetVisibility(Team.Parameter.Index = InTeamIndex and widget_visibility.Visible or widget_visibility.Hidden)
+                YouUnderTextureBlock.SetVisibility(TeamIndex = InTeamIndex and widget_visibility.Visible or widget_visibility.Hidden)
                 TeamScoreStackBox := stack_box:
                     Orientation := orientation.Vertical
                     Slots := array:
@@ -113,12 +104,12 @@ rr_hud_manager := class:
                                 Slots := array:
                                     overlay_slot:
                                         Widget := texture_block:
-                                            DefaultImage := Team.Parameter.Index = InTeamIndex and RR_UI.TeamScoring.T_TeamBlockYou or RR_UI.TeamScoring.T_TeamBlock
+                                            DefaultImage := TeamIndex = InTeamIndex and RR_UI.TeamScoring.T_TeamBlockYou or RR_UI.TeamScoring.T_TeamBlock
                                             DefaultTint := TeamTint
                                             DefaultDesiredSize := TextureBlockSize
                                     overlay_slot:
                                         Widget := text_block:
-                                            DefaultText := ToMessage(TeamIndexScoreMap[Team.Parameter.Index] or 0)
+                                            DefaultText := ToMessage(TeamIndexScoreMap[TeamIndex] or 0)
                                             DefaultTextColor := Parameters.TextColor
                                             DefaultShadowColor := Parameters.TextShadowColor
                                             DefaultShadowOffset := option{Parameters.TextShadowOffset}
@@ -128,12 +119,12 @@ rr_hud_manager := class:
                         stack_box_slot:
                             Widget := YouUnderTextureBlock
 
-                TeamScoreStackBox.SetVisibility(TeamIndexScoreMap[Team.Parameter.Index] and widget_visibility.Visible or widget_visibility.Collapsed)
+                TeamScoreStackBox.SetVisibility(TeamIndexScoreMap[TeamIndex] and widget_visibility.Visible or widget_visibility.Collapsed)
 
                 stack_box_slot:
                     HorizontalAlignment := horizontal_alignment.Right
                     Padding := margin:
-                        Right := TeamBlocksCount <> TeamIndexTintMap.Length and Parameters.HorizontalPadding or 0.0
+                        Right := TeamBlocksCount <> TeamIndexColorMap.Length and Parameters.HorizontalPadding or 0.0
                     Widget := TeamScoreStackBox
 
         OverallCanvas := canvas:
@@ -157,7 +148,7 @@ rr_hud_manager := class:
     
         HUD := rr_score_hud:
             BelongingTeamIndex := InTeamIndex
-            TeamIndexTintMap := TeamIndexTintMap
+            TeamIndexColorMap := TeamIndexColorMap
             HorizontalTeamStackBox := HorizontalTeamStackBox
             OverallCanvas := OverallCanvas
 
@@ -166,7 +157,7 @@ rr_hud_manager := class:
 rr_score_hud := class:
 
     BelongingTeamIndex : int
-    TeamIndexTintMap : [int]color
+    TeamIndexColorMap : [int]color
     HorizontalTeamStackBox : stack_box
     OverallCanvas : canvas
 
@@ -182,7 +173,7 @@ rr_score_hud := class:
         do:
             if:
                 TeamIndexScore := SortedTeamScores[Position]
-                TeamTint := TeamIndexTintMap[TeamIndexScore(0)]
+                TeamTint := TeamIndexColorMap[TeamIndexScore(0)]
             then:
                 Print("Updating {Position} to be Team {TeamIndexScore(0)} with Score {TeamIndexScore(1)}")
                 TeamStackBox.SetVisibility(widget_visibility.Visible)

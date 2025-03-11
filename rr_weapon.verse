@@ -16,7 +16,7 @@ weapon_select_tag := class(tag){}
     item_remover := class(weapon_select_tag){}
     keep_loadout_select_device := class(weapon_select_tag){}
 
-rr_item_manager := class:
+rr_loadout_selector := class:
 
     WeaponSelectDialog : popup_dialog_device
     KeepSelectDialog : popup_dialog_device
@@ -53,18 +53,18 @@ rr_item_manager := class:
                 else:
                     PrintAndErr("Unreachable")
 
-    ShowSelectionUITo(InAgents : []agent):void =
-        for:
-            InAgent : InAgents
-            not KeepSelection[InAgent] or not KeepSelection[InAgent]?
-        do:
-            WeaponSelectDialog.Show(InAgent)
+    ShowUI(InAgent : agent):void =
+        WeaponSelectDialog.Show(InAgent)
 
-    HideUIFrom(InAgent : agent):void =
+    ShowUI():void =
+        WeaponSelectDialog.Show()
+
+    HideUI(InAgent : agent):void =
         WeaponSelectDialog.Hide(InAgent)
         KeepSelectDialog.Hide(InAgent)
 
-    HideUIFromAll():void =
+
+    HideUI():void =
         WeaponSelectDialog.Hide()
         KeepSelectDialog.Hide()
 

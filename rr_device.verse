@@ -4,129 +4,146 @@ using { /Fortnite.com/Playspaces }
 using { /Fortnite.com/Devices }
 using { /Verse.org/Simulation }
 using { /Verse.org/Random }
+using { /Verse.org/Colors }
 
 using { FN_Gameplay }
 
 var <internal>MainDevicePlayspaceMap<internal> : weak_map(session, fort_playspace) = map{}
 
-GetMainDevicePlayspace():fort_playspace = 
+GetMainDevicePlayspace()<transacts>:fort_playspace = 
     MainDevicePlayspaceMap[GetSession()] or PrintAndErr("Tried to get MainDevicePlayspace before set")
 
 # Change to RR device
 rr_device := class(creative_device):
 
-    @editable       LinearStates : []fn_gameplay_state = array:
-        fn_gameplay_state:
-            Key := "NotEnoughPlayers"
-            OptionalAutoCompleteTimer := false
-        fn_gameplay_state:
-            Key := "OpponentsLeft"
-            OptionalAutoCompleteTimer := option{timer_device{}}
-        fn_gameplay_state:
-            Key := "TeamSelect"
-            OptionalAutoCompleteTimer := option{timer_device{}}
-        fn_gameplay_state:
-            Key := "Combat"
-            OptionalAutoCompleteTimer := false
-        fn_gameplay_state:
-            Key := "RematchRequeue"
-            OptionalAutoCompleteTimer := option{timer_device{}}
-
-    @editable       LinearStateLinks : []fn_gameplay_link = array:
-        fn_gameplay_link:
-            InitialStateKey := "NotEnoughPlayers"
-            WhenToSwitch := fn_gameplay_link_type.OnInitialStateCompleted
-            EndingStateKey := "TeamSelect"
-        fn_gameplay_link:
-            InitialStateKey := "TeamSelect"
-            WhenToSwitch := fn_gameplay_link_type.OnInitialStateCompleted
-            EndingStateKey := "Combat"
-        fn_gameplay_link:
-            InitialStateKey := "Combat"
-            WhenToSwitch := fn_gameplay_link_type.OnInitialStateCompleted
-            EndingStateKey := "Combat"
-        fn_gameplay_link:
-            InitialStateKey := "Combat"
-            WhenToSwitch := fn_gameplay_link_type.OnInitialStateFailedToComplete
-            EndingStateKey := "RematchRequeue"
-        fn_gameplay_link:
-            InitialStateKey := "Combat"
-            WhenToSwitch := fn_gameplay_link_type.OnInitialStateFailedToInitialze
-            EndingStateKey := "OpponentsLeft"
-
     @editable       RebootParameters : rr_reboot_parameters = rr_reboot_parameters{}
 
-    @editable       TeamParameters : rr_team_parameters = rr_team_parameters:
-        Teams := array:
-            rr_team_parameter:
-                Index := 1
-                Capacity := option{2}
-            rr_team_parameter:
-                Index := 2
-                Capacity := option{2}
-            rr_team_parameter:
-                Index := 3
-                Capacity := option{2}
-            rr_team_parameter:
-                Index := 4
-                Capacity := option{2}
+    @editable       ScoreHUDParameters : rr_score_hud_parameters = rr_score_hud_parameters{}
 
-    @editable       HUDParameters : rr_hud_parameters = rr_hud_parameters{}
+    @editable       SelectableTeamParameters : []rr_selectable_team_parameter = array:
+        rr_selectable_team_parameter:
+            Index := 1
+            Color := NamedColors.Blue
+        rr_selectable_team_parameter:
+            Index := 2
+            Color := NamedColors.Red
+        rr_selectable_team_parameter:
+            Index := 3
+            Color := NamedColors.Green
+        rr_selectable_team_parameter:
+            Index := 4
+            Color := NamedColors.Yellow
+    @editable       NeutralTeamIndex : int = 0
+    @editable       SelectableTeamCapacity : int = 2
+    @editable       MinimumSelectableTeams : int = 2
 
-    # TODO: Debug Settings? Allows one player only, test players, etc.
+    @editable       AutoStartMinimum : int = 4
+
+    @editable       InitialStormPhaseRadiusCM : float = 8500.0
+
     OnBegin<override>()<suspends>:void =
         if:
             set MainDevicePlayspaceMap[GetSession()] = GetPlayspace()
         then:
-            LinkLinearStates(LinearStates, LinearStateLinks)
-            InitializeGlobalLinearStates(LinearStates)
-
-            DBNODevice := GetTaggedObjects(combat_dbno_device{}, down_but_not_out_device)[0] or PrintAndErr("Could not find DBNO Device!")
-            TeamPlayerManager := BuildTeamPlayerManager(DBNODevice)
-            RebootManager := BuildRebootManager(TeamPlayerManager, DBNODevice)
-            HUDManager := BuildHUDManager()
-            GameflowController := BuildGameflowController(TeamPlayerManager, RebootManager, HUDManager, DBNODevice)
+            DBNODevice := GetFirstTaggedOfType(combat_dbno_device{}, down_but_not_out_device)
+            InitializeTeamCombatInteractionManager(DBNODevice, GetPlayspace().GetTeamCollection())
+            AnalyzerAwarder := BuildAnalyzerAwarder()
+            AnalyzerAwarder.Initialize()
+            TeamSelector := BuildTeamSelector()
+            CombatManager := BuildCombatManager(DBNODevice)
+            FiniteStateMachine := BuildFSM(TeamSelector, CombatManager)
             
-            ForceState(GetState["NotEnoughPlayers"] or PrintAndErr("Could not start the game and initialize the NotEnoughPlayers State"))
+            FiniteStateMachine.Initialize(rr_state.NotEnoughPlayers)
         else:
             PrintAndErr("Failed to add MainDevicePlayspace to WeakMap")
 
-    BuildTeamPlayerManager<internal>(DBNODevice : down_but_not_out_device):rr_team_and_player_manager =
-        TeamPlayerManager := rr_team_and_player_manager:
-            TeamCollection := GetPlayspace().GetTeamCollection()
-            DefaultCapacity := TeamParameters.DefaultCapacity
-            TeamIndexCapacityMap := TeamParameters.IndexCapacityMap()
-            FortPlayspace := GetPlayspace()
-            TeamsData := BuildTeamsData()
-        InitializeTeamCombatInteractionManager(DBNODevice, TeamPlayerManager)
-        TeamPlayerManager
+    BuildFSM<internal>(TeamSelector : rr_team_selector, CombatManager : rr_combat_manager):rr_fsm =
+        rr_fsm:
+            TeamSelectAutoCompleteTimer := GetFirstTaggedOfType(team_select_auto_timer_tag{}, timer_device)
+            RematchRequeueAutoCompleteTimer := GetFirstTaggedOfType(rematch_requeue_auto_timer_tag{}, timer_device)
+            OpponentsLeftRestartAutoCompleteTimer := GetFirstTaggedOfType(opponents_left_auto_timer_tag{}, timer_device)
 
-    BuildTeamsData<internal>():rr_teams_data =
+            CombatStartingTimer := GetFirstTaggedOfType(reboot_van_starting_timer_tag{}, timer_device) 
+            TeamSelectStartingTimer := GetFirstTaggedOfType(team_select_starting_timer_tag{}, timer_device)
+
+            RoundSettingsDevice := GetFirstTaggedOfType(round_settings_tag{}, round_settings_device)
+            EndGameDevice := GetFirstTaggedOfType(end_game_device_tag{}, end_game_device)
+            WinnerReferences := GetTaggedObjects(winning_stage_tag{}, player_reference_device)
+            WinnerRematchProp := GetFirstTaggedOfType(winning_stage_tag{}, creative_prop)
+            OnePlayerHUD := GetFirstTaggedOfType(one_player_hud_tag{}, hud_message_device)
+            AutoStartVoteTimer := GetFirstTaggedOfType(auto_vote_ui_tag{}, timer_device)
+            AutoStartVoteUI := GetFirstTaggedOfType(auto_vote_ui_tag{}, popup_dialog_device)
+            AutoStartFailedHUD := GetFirstTaggedOfType(auto_vote_ui_tag{}, hud_message_device)
+
+            Positions := BuildPositions()
+
+            ScoreHUDManager := BuildScoreHUDManager()
+            TeamSelector := TeamSelector
+            CombatManager := CombatManager
+
+            AutoStartMinimum := AutoStartMinimum
+
+    BuildCombatManager<internal>(DBNODevice : down_but_not_out_device):rr_combat_manager = 
+        rr_combat_manager:
+            DBNODevice := DBNODevice
+            PrefireMutatorZone := GetFirstTaggedOfType(prefire_mutator_tag{}, mutator_zone_device)
+            StormController := GetFirstTaggedOfType(basic_storm_tag{}, basic_storm_controller_device)
+            SupplyDropSpawners := GetTaggedObjects(supply_drops_tag{}, supply_drop_spawner_device)
+            CustomBarrierTimerHUD := custom_hud_timer:
+                HUDMessageDevice := GetFirstTaggedOfType(barrier_timer_tag{}, hud_message_device)
+            LoadoutSelector := BuildLoadoutSelector()
+            POIs := BuildPOIs()
+            RebootManager := BuildRebootManager(DBNODevice)
+            InitialStormPhaseRadiusCM := InitialStormPhaseRadiusCM
+            WinRoundHUD := GetFirstTaggedOfType(win_round_tag{}, hud_message_device)
+            LoseRoundHUD := GetFirstTaggedOfType(lose_round_tag{}, hud_message_device)
+            SupplyDropTimesAndQuantities := array:
+                (10.0, 2)
+                (60.0, 3)
+                (60.0, 2)
+
+    BuildAnalyzerAwarder<internal>():rr_analyzer_awarder =
+        rr_analyzer_awarder:
+            LobbyAFK := GetFirstTaggedOfType(lobby_afk{}, accolades_device)
+            SelectedTeam := GetFirstTaggedOfType(selected_team{}, accolades_device)
+            Rebooted := GetFirstTaggedOfType(rebooted{}, accolades_device)
+            Knock := GetFirstTaggedOfType(knock_opponent{}, accolades_device)
+            Elimination := GetFirstTaggedOfType(eliminate_opponent{}, accolades_device)
+            TeamWipe := GetFirstTaggedOfType(team_wipe{}, accolades_device)
+            PlayedRound := GetFirstTaggedOfType(played_round{}, accolades_device)
+            WonRound := GetFirstTaggedOfType(won_round{}, accolades_device)
+            PlayedGame := GetFirstTaggedOfType(played_game{}, accolades_device)
+            WonGame := GetFirstTaggedOfType(won_game{}, accolades_device)
+
+    BuildTeamSelector<internal>():rr_team_selector = 
+        rr_team_selector:
+            SelectTeamDialog := GetFirstTaggedOfType(jip_team_select_dialog{}, popup_dialog_device)
+            FailedSelectHUD := GetFirstTaggedOfType(failed_to_join_team_hud{}, hud_message_device)
+            SelectableTeams := BuildSelectableTeams()
+            NeutralTeamSelector := GetFirstTaggedOfType(team_neutral_selector_tag{}, class_and_team_selector_device)
+            NeutralTeamIndex := NeutralTeamIndex
+            SelectableTeamCapacity := SelectableTeamCapacity
+            MinimumSelectableTeams := MinimumSelectableTeams
+
+    BuildSelectableTeams<internal>():[]rr_selectable_team =
+        var SelectableTeams : []rr_selectable_team = array{}
         TeamTags := array:
             team_one_tag{}
             team_two_tag{}
             team_three_tag{}
             team_four_tag{}
-        ParamTagPairs := Zip(TeamParameters.Teams, TeamTags)
-        var Teams : []rr_team_data = array{}
         for:
-            Index -> ParamTagPair : ParamTagPairs
+            Index -> TeamParameter : SelectableTeamParameters
+            TeamTag := TeamTags[Index]
         do:
-            MaybeTeamData := BuildTeamData(ParamTagPair)
-            if(TeamData := MaybeTeamData?):
-                set Teams += array{TeamData}
+            MaybeSelectableTeam := BuildSelectableTeam(TeamParameter, TeamTag)
+            if(SelectableTeam := MaybeSelectableTeam?):
+                set SelectableTeams += array{SelectableTeam}
             else:
                 PrintAndErr("Could not build Team Data for Team Tag {Index + 1}")
-        rr_teams_data:
-            DefaultCapacity := TeamParameters.DefaultCapacity
-            NeutralTeamIndex := TeamParameters.NeutralTeamIndex
-            NeutralTeamSelector := GetTaggedObjects(team_neutral_selector_tag{}, class_and_team_selector_device)[0] or PrintAndErr("Could not find NeutralTeamSelector Device!")
-            JIPTeamSelectDialog := GetTaggedObjects(jip_team_select_dialog{}, popup_dialog_device)[0]               or PrintAndErr("Could not find JIPTeamSelectDialog Device!")
-            FailedToJoinTeamHUD := GetTaggedObjects(failed_to_join_team_hud{}, hud_message_device)[0]               or PrintAndErr("Could not find FailedToJoinTeamHUD Device!")
-            Teams := Teams
-            TeamSize := 2
-    
-    BuildTeamData<internal>(TeamParameter : rr_team_parameter, TeamTag : team_verse_tag):?rr_team_data =
+        SelectableTeams
+
+    BuildSelectableTeam<internal>(TeamParameter : rr_selectable_team_parameter, TeamTag : team_verse_tag):?rr_selectable_team =
         if:
             TaggedObjects := FindCreativeObjectsWithTag(TeamTag)
             SelectVolume := TaggedObjects.CastGeneratedObjects(mutator_zone_device)[0]
@@ -140,96 +157,48 @@ rr_device := class(creative_device):
                 TagView := MaybeDisplayTeamSelectorSelector.GetTags()
                 if(TagView.Has[display_selector_device_tag{}]):
                     return option:
-                        rr_team_data:
-                            Parameter := TeamParameter
+                        rr_selectable_team:
+                            Index := TeamParameter.Index
+                            Color := TeamParameter.Color
                             SelectVolume := SelectVolume
-                            ClassAndTeamSelector := ClassAndTeamSelector
+                            Selector := ClassAndTeamSelector
+                            DisplaySelector := MaybeDisplayTeamSelectorSelector
                             PlayerReferenceDevices := PlayerReferenceDevices
-                            DisplayTeamSelector := MaybeDisplayTeamSelectorSelector
         return false
 
-    BuildRebootManager<internal>(TeamPlayerManager : rr_team_and_player_manager, DBNODevice : down_but_not_out_device):rr_reboot_manager = 
+    BuildRebootManager<internal>(DBNODevice : down_but_not_out_device):rr_reboot_manager = 
         rr_reboot_manager:
             RebootParameters := RebootParameters
-            RebootDevices := BuildRebootDevices(DBNODevice)
-            TeamPlayerManager := TeamPlayerManager
-
-    BuildRebootDevices<internal>(DBNODevice : down_but_not_out_device):rr_reboot_devices =
-        rr_reboot_devices:
-            RebootTimerDevice := GetTaggedObjects(reboot_respawn_tag{}, timer_device)[0]                        or PrintAndErr("Could not find RebootRespawnTimer Device!")
-            RebootXP := GetTaggedObjects(reboot_respawn_tag{}, accolades_device)[0]                             or PrintAndErr("Could not find RebootXP Device")
-            DisabledHUD := GetTaggedObjects(reboot_disabled_hud_tag{}, hud_message_device)[0]                   or PrintAndErr("Could not find RebootDisabledHUD Device!")
-            ItemGranter := GetTaggedObjects(reboot_granted_item_tag{}, item_granter_device)[0]                  or PrintAndErr("Could not find RebootItemGranter Device!")
-            TeamWipeHUD := GetTaggedObjects(team_wipe_tag{}, hud_message_device)[0]                             or PrintAndErr("Could not find TeanWipeHUD Device!")
-            TeamWipeXP := GetTaggedObjects(reboot_respawn_tag{}, accolades_device)[0]                           or PrintAndErr("Could not find TeamWipeXP Device")
-            HoldToRebootTrigger := GetTaggedObjects(hold_to_reboot_input_tag{}, input_trigger_device)[0]        or PrintAndErr("Could not find HoldToRebootInputTrigger Device!")
-            HoldToRebootHUDNoAnim := GetTaggedObjects(hold_to_reboot_hud_no_anim{}, hud_message_device)[0]      or PrintAndErr("Could not find HoldToRebootHUDNoAnim Device!")
-            HoldToRebootHUDAnim := GetTaggedObjects(hold_to_reboot_hud_anim{}, hud_message_device)[0]           or PrintAndErr("Could not find HoldToRebootHUDAnim Device!")
+            RebootTimerDevice := GetFirstTaggedOfType(reboot_respawn_tag{}, timer_device)
+            DisabledHUD := GetFirstTaggedOfType(reboot_disabled_hud_tag{}, hud_message_device)
+            ItemGranter := GetFirstTaggedOfType(reboot_granted_item_tag{}, item_granter_device)
+            TeamWipeHUD := GetFirstTaggedOfType(team_wipe_tag{}, hud_message_device)
+            HoldToRebootTrigger := GetFirstTaggedOfType(hold_to_reboot_input_tag{}, input_trigger_device)
+            HoldToRebootHUDNoAnim := GetFirstTaggedOfType(hold_to_reboot_hud_no_anim{}, hud_message_device)
+            HoldToRebootHUDAnim := GetFirstTaggedOfType(hold_to_reboot_hud_anim{}, hud_message_device)
             StatusTimerCenterHUD :=  custom_hud_timer:
-                HUDMessageDevice := GetTaggedObjects(reboot_status_timer_center_tag{}, hud_message_device)[0]   or PrintAndErr("Could not find RebootStatusTimerHUD Center Device!")
+                HUDMessageDevice := GetFirstTaggedOfType(reboot_status_timer_center_tag{}, hud_message_device)
             StatusTimerCornerHUD :=  custom_hud_timer:
-                HUDMessageDevice := GetTaggedObjects(reboot_status_timer_corner_tag{}, hud_message_device)[0]   or PrintAndErr("Could not find RebootStatusTimerHUD Corner Device!")
+                HUDMessageDevice := GetFirstTaggedOfType(reboot_status_timer_corner_tag{}, hud_message_device)
             DBNODevice := DBNODevice
             RebootMessageFeed := RebootParameters.RebootMessageFeed
             SkyDiveTeleporters := GetTaggedObjects(reboot_skyzone_tag{}, teleporter_device)
             
-    BuildHUDManager<internal>():rr_hud_manager = 
-        HUDManager := rr_hud_manager:
-            Parameters := HUDParameters
-            TeamIndexTintMap := TeamParameters.IndexTintMap()
-            WinRoundHUD := GetTaggedObjects(win_round_tag{}, hud_message_device)[0]     or PrintAndErr("Could not find WinRoundHUD Device!")
-            LoseRoundHUD := GetTaggedObjects(lose_round_tag{}, hud_message_device)[0]   or PrintAndErr("Could not find LoseRoundHUD Device!")
-            WatermarkHUD := GetTaggedObjects(watermark_hud_tag{}, hud_message_device)[0]    or PrintAndErr("Could not find WatermarkHUD Device!")
-        HUDManager.WatermarkHUD.Show()
-        HUDManager
-
-    BuildGameflowController<internal>(TeamPlayerManager : rr_team_and_player_manager, RebootManager : rr_reboot_manager, HUDManager : rr_hud_manager, DBNODevice : down_but_not_out_device):rr_gameflow_controller =
-        GameflowController := rr_gameflow_controller:
-            TeamPlayerManager := TeamPlayerManager
-            RebootManager := RebootManager
-            HUDManager := HUDManager
-            GameflowDevices := BuildGameflowDevices(DBNODevice)
-            ItemSelectManager := BuildWeaponSelect()
-            POIs := BuildPOIs()
-            Positions := BuildPositions()
-            AutoStartMinimum := 4
-            MaxPlayers := 8
-            SupplyDropTimesAndQuantities := array:
-                (10.0, 2)
-                (60.0, 3)
-                (60.0, 2)
-        GameflowController.Initialize()
-        GameflowController
-
-    BuildGameflowDevices<internal>(DBNODevice : down_but_not_out_device):rr_gameflow_devices = 
-        rr_gameflow_devices:
-            AllTeamSettings := GetTaggedObjects(all_team_set_inv_tag{}, team_settings_and_inventory_device)[0]                          or PrintAndErr("Could not find AllTeamSettings Device!")
-            NotEnoughPlayersHUD := GetTaggedObjects(not_enough_players_hud_tag{}, hud_message_device)[0]                                or PrintAndErr("Could not find NotEnoughPlayersHUD Device!")
-            RoundSettings := GetTaggedObjects(round_settings_tag{}, round_settings_device)[0]                                           or PrintAndErr("Could not find RoundSettings Device!")
-            WonRoundXP := GetTaggedObjects(win_round_tag{}, accolades_device)[0]                                                        or PrintAndErr("Could not find WinRoundXP Device!")
-            PlayedRoundXP := GetTaggedObjects(win_round_tag{}, accolades_device)[0]                                                     or PrintAndErr("Could not find PlayedRoundXP Device!")
-            AutoStartVoteTimer := for(Obj : FindCreativeObjectsWithTag(auto_vote_ui_tag{}), Timer := timer_device[Obj]){Timer}[0]       or PrintAndErr("Could not find AutoStartVoteTimer Device!")
-            AutoStartVoteUI := for(Obj : FindCreativeObjectsWithTag(auto_vote_ui_tag{}), PopUp := popup_dialog_device[Obj]){PopUp}[0]   or PrintAndErr("Could not find AutoStartVoteUI PopUp Device!")
-            AutoStartFailedHUD := for(Obj : FindCreativeObjectsWithTag(auto_vote_ui_tag{}), HUD := hud_message_device[Obj]){HUD}[0]     or PrintAndErr("Could not find AutoStartFailedHUD Device!")
-            RebootVanStartingTimer := GetTaggedObjects(reboot_van_starting_timer_tag{}, timer_device)[0]                                or PrintAndErr("Could not find BarrierTimer Device!")
-            PrefireMutatorZone := GetTaggedObjects(prefire_mutator_tag{}, mutator_zone_device)[0]                                       or PrintAndErr("Could not find PrefireMutatorZone Device!")
-            EndGameDevice := GetTaggedObjects(end_game_device_tag{}, end_game_device)[0]                                                or PrintAndErr("Could not find EndGame Device!")
-            BasicStormController := GetTaggedObjects(basic_storm_tag{}, basic_storm_controller_device)[0]                               or PrintAndErr("Could not find BasicStormController Device!")
-            SupplyDropTimer := GetTaggedObjects(supply_drops_tag{}, timer_device)[0]                                                    or PrintAndErr("Could not find SupplyDropTimer Device!")
-            SupplyDrops := Shuffle(GetTaggedObjects(supply_drops_tag{}, supply_drop_spawner_device))
-            CustomBarrierTimerHUD := custom_hud_timer:
-                HUDMessageDevice := GetTaggedObjects(barrier_timer_tag{}, hud_message_device)[0]                                        or PrintAndErr("Could not find BarrierTimerHUD Device!")
-            WinnerRematchProp := GetTaggedObjects(winning_stage_tag{}, creative_prop)[0] or creative_prop{}
-            WinnerReferences := GetTaggedObjects(winning_stage_tag{}, player_reference_device)
-            DBNODevice := DBNODevice
+    BuildScoreHUDManager<internal>():rr_score_hud_manager = 
+        ScoreHUDManager := rr_score_hud_manager:
+            Parameters := ScoreHUDParameters
+            TeamIndexColorMap := SelectableTeamParameters.IndexColorMap()
+            WatermarkHUD := GetFirstTaggedOfType(watermark_hud_tag{}, hud_message_device)
+        ScoreHUDManager.WatermarkHUD.Show()
+        ScoreHUDManager
         
-    BuildWeaponSelect<internal>():rr_item_manager =
+    BuildLoadoutSelector<internal>():rr_loadout_selector =
         AlwaysGranterTag := always_granter{}
-        ItemManager := rr_item_manager:
-            WeaponSelectDialog := GetTaggedObjects(weapon_select_device{}, popup_dialog_device)[0]      or PrintAndErr("Could not find WeaponUI Device!")
-            KeepSelectDialog := GetTaggedObjects(keep_loadout_select_device{}, popup_dialog_device)[0]  or PrintAndErr("Could not find KeepSelectUI Device!")
-            AlwaysGranter := GetTaggedObjects(AlwaysGranterTag, item_granter_device)[0]                 or PrintAndErr("Could not find AlwaysGranter Device!")
-            ItemRemover := GetTaggedObjects(item_remover{}, item_remover_device)[0]                     or PrintAndErr("Could not find ItemRemover Device!")
+        ItemManager := rr_loadout_selector:
+            WeaponSelectDialog := GetFirstTaggedOfType(weapon_select_device{}, popup_dialog_device)
+            KeepSelectDialog := GetFirstTaggedOfType(keep_loadout_select_device{}, popup_dialog_device)
+            AlwaysGranter := GetFirstTaggedOfType(AlwaysGranterTag, item_granter_device)
+            ItemRemover := GetFirstTaggedOfType(item_remover{}, item_remover_device)
             LoadoutGranters := BuildLoadoutGranters()
             RandomGranters := GetTaggedObjects(random_granter{}, item_granter_device)
         ItemManager.Initialize()
@@ -277,7 +246,7 @@ rr_device := class(creative_device):
                 Barrier
             TeamPairings := for(PairingTag : PairingTags):
                 ((POITag, PairingTag, first_team{}), (POITag, PairingTag, second_team{})).MapTup(BuildPOITeleporters)
-            CenterPositionProp := GetTaggedObjects(POITag, creative_prop)[0] or PrintAndErr("Could not find BasicStormController for " + ToDiagnostic(POITag))
+            CenterPositionProp := GetFirstTaggedOfType(POITag, creative_prop)
 
     BuildPOITeleporters<internal>(POITag : poi_tag, PairingTag : pairing_tp, TeamTag : pairing_tp):[]teleporter_device =
         FilterOp of for(Obj : FindCreativeObjectsWithTag(POITag)):
