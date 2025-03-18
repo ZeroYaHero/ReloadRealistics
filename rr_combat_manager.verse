@@ -1,6 +1,7 @@
 using { /UnrealEngine.com/Temporary/SpatialMath }
 using { /UnrealEngine.com/Temporary }
 using { /Verse.org/Simulation/Tags }
+using { /Fortnite.com/Characters }
 using { /Verse.org/Simulation }
 using { /Fortnite.com/Devices }
 using { /Verse.org/Random }
@@ -10,7 +11,6 @@ using { FN_Gameplay }
 combat_manager_tag := class(tag){}
 
     barrier_timer_tag := class(combat_manager_tag){}
-    prefire_mutator_tag := class(combat_manager_tag){}
     basic_storm_tag := class(combat_manager_tag){}
     supply_drops_tag := class(combat_manager_tag){}
     win_round_tag := class(combat_manager_tag){}
@@ -19,7 +19,6 @@ combat_manager_tag := class(tag){}
 rr_combat_manager := class:
 
     DBNODevice : down_but_not_out_device
-    PrefireMutatorZone : mutator_zone_device
     StormController : storm_controller_device
     SupplyDropSpawners : []supply_drop_spawner_device
     CustomBarrierTimerHUD : custom_hud_timer
@@ -27,7 +26,6 @@ rr_combat_manager := class:
     WinRoundHUD : hud_message_device
     LoadoutSelector : rr_loadout_selector
     RebootManager : rr_reboot_manager
-    # ScoreHUDManager : rr_score_hud_manager
     POIs : []rr_poi
     InitialStormPhaseRadiusCM : float
     SupplyDropTimesAndQuantities : []tuple(float, int)
@@ -38,8 +36,7 @@ rr_combat_manager := class:
     GetNextPOI<public>()<transacts><decides>:rr_poi =
         POIs[RoundNumber]
 
-    AwaitRoundReady<public>(TeamIndexAgentsMap : [int][]agent, CurrentPOI : rr_poi)<suspends>:void =
-        PrefireMutatorZone.Enable()
+    InitializeRound<public>(TeamIndexAgentsMap : [int][]agent, CurrentPOI : rr_poi)<suspends>:void =
         if { StormController.TeleportTo[CurrentPOI.GetCenter()] }
         StormController.GenerateStorm()
 
@@ -55,7 +52,7 @@ rr_combat_manager := class:
             TeamMembers : TeamAgents2D
             TeamMember : TeamMembers
         do:
-            GetCombatReady(TeamMember)
+            InitializeParticipant(TeamMember)
             TeamMember
         Sleep(2.0)
         for:
@@ -64,7 +61,7 @@ rr_combat_manager := class:
         do:
             LoadoutSelector.ShowUI(Participant)
         
-        RebootManager.EnableReboots(CurrentRoundParticipants)
+        RebootManager.EnableReboots()
         AwaitBarrierTimer()
 
     InitializeTeamEvents<private>(TeamIndexAgentsMap : [int][]agent):[][]agent =
@@ -72,9 +69,9 @@ rr_combat_manager := class:
             InitializeTeamCauseCombatEvents(TeamIndex)
             TeamAgents
 
-    GetCombatReady<private>(InAgent : agent):void =
+    InitializeParticipant<private>(InAgent : agent):void =
         DBNODevice.Revive(InAgent)
-        if(FortCharacter := InAgent.GetFortChar[]):
+        if(FortCharacter := InAgent.GetFortCharacter[]):
             FortCharacter.SetHealth(100.0)
             FortCharacter.SetShield(100.0)
         if(LoadoutSelector.HasKeepSelection[InAgent]):
@@ -89,13 +86,12 @@ rr_combat_manager := class:
 
     StartRound<public>(CurrentPOI : rr_poi)<suspends>:void =
         LoadoutSelector.HideUI()
-        PrefireMutatorZone.Disable()
         CurrentPOI.DisableBarriers()
         branch:
             sync:
-                RebootManager.AwaitReboots()
+                RebootManager.AwaitReboots(CurrentRoundParticipants)
                 SpawnSupplyDrops(CurrentPOI.GetCenter().Translation, InitialStormPhaseRadiusCM)
-        AwaitRoundEndCondition()
+        AwaitRoundEnd()
 
     SpawnSupplyDrops<private>(CenterV3 : vector3, Radius : float)<suspends>:void =
         var SupplyDropIndex : int = 0
@@ -113,14 +109,14 @@ rr_combat_manager := class:
                 SupplyDrop.Spawn()
                 set SupplyDropIndex += 1
         
-    AwaitRoundEndCondition<private>()<suspends>:void =
+    AwaitRoundEnd<private>()<suspends>:void =
         loop:
             race:
                 Sleep(1.0)
                 RebootManager.TeamWipeEvent.Await()
             ParticipatingAliveTeamIndexes := GetParticipatingAliveTeamIndexes() 
             if(ParticipatingAliveTeamIndexes.Length < 2):
-                TallyScore(ParticipatingAliveTeamIndexes)
+                TallyRoundScoreResult(ParticipatingAliveTeamIndexes)
                 break
 
     GetParticipatingAliveTeamIndexes<public>():[]int = 
@@ -140,26 +136,40 @@ rr_combat_manager := class:
         do:
             TeamIndex
 
-    TallyScore<private>(ParticipatingAliveTeamIndexes : []int):void =
+    TallyRoundScoreResult<private>(ParticipatingAliveTeamIndexes : []int):void =
         TeamCollection := GetMainDevicePlayspace().GetTeamCollection()
-        set TotalTeamRoundScores = Dict of for(TeamIndex -> TeamMembers : TeamCollection._GetTeamsWithMembers()):
+        set TotalTeamRoundScores = Dict of for:
+            TeamIndex -> TeamMembers : TeamCollection._GetTeamsWithMembers()
+        do:
             for(TeamMember : TeamMembers):
                 if(TeamCollection.IsOnTeam[TeamMember, ParticipatingAliveTeamIndexes[0]]):
                     WinRoundHUD.Show(TeamMember)
-                    GetGlobalAnalyzerAwarder().Award(TeamMember, rr_award.WonRound)
-                else:
+                    AwardXP(TeamMember, rr_award.WonRound)
+                else if(CurrentRoundParticipants.Find[TeamMember]):
                     LoseRoundHUD.Show(TeamMember)
-                    GetGlobalAnalyzerAwarder().Award(TeamMember, rr_award.PlayedRound)
+                    AwardXP(TeamMember, rr_award.PlayedRound)
+
             if(CurrentScore := TotalTeamRoundScores[TeamIndex]):
                 if(TeamIndex = ParticipatingAliveTeamIndexes[0]):
                     (TeamIndex, CurrentScore + 1)
                 else:
                     (TeamIndex, CurrentScore)
+            else if(TeamIndex = ParticipatingAliveTeamIndexes[0]):
+                (TeamIndex, 1)
             else:
                 (TeamIndex, 0)
 
-    GetSortedTeamScores<public>():[]tuple(int, int) =
-        SortBy(TotalTeamRoundScores.Items(), TupleSecondGreaterComp)
+    GetSortedTeamScores<public>(SortedTeamSizes : []tuple(int, []agent)):[]tuple(int, int) =
+        TeamCollection := GetMainDevicePlayspace().GetTeamCollection()
+        ScorePairs := for:
+            TeamIndexAgents : SortedTeamSizes
+            TeamIndexAgents(1).IsAtLeastOneActive[]
+        do:
+            if(CurrentScore := TotalTeamRoundScores[TeamIndexAgents(0)]):
+                (TeamIndexAgents(0), CurrentScore)
+            else:
+                (TeamIndexAgents(0), 0)
+        SortBy(ScorePairs, TupleSecondGreaterComp)
 
     EndRound<public>():void =
         RebootManager.DisableReboots(?RoundEnding := true)
@@ -168,4 +178,6 @@ rr_combat_manager := class:
                 SupplyDropSpawner.Open(RandomAgent)
         StormController.DestroyStorm()
         set RoundNumber += 1
+        for(Participant : CurrentRoundParticipants):
+            LoadoutSelector.ClearLoadout(Participant)
         set CurrentRoundParticipants = array{}

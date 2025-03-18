@@ -3,6 +3,7 @@ using { /UnrealEngine.com/Temporary/UI }
 using { /Verse.org/Simulation/Tags }
 using { /Verse.org/Simulation }
 using { /Fortnite.com/Devices }
+using { /Verse.org/Assets }
 using { /Verse.org/Colors }
 using { /Fortnite.com/UI }
 
@@ -44,6 +45,10 @@ rr_score_hud_parameters := class<concrete>:
         X := 35.0
         Y := 60.0
 
+    @editable   TeamBlockTexture : texture = RR_UI.TeamScoring.T_TeamBlock
+    @editable   TeamBlockYouTexture : texture = RR_UI.TeamScoring.T_TeamBlockYou
+    @editable   YouUnderTexture : texture = RR_UI.TeamScoring.T_YouUnder
+    @editable   CrownTexture : texture = RR_UI.TeamScoring.T_Crown
 
 rr_score_hud_manager := class:
 
@@ -61,9 +66,9 @@ rr_score_hud_manager := class:
             if(HUD := AgentHUDMap[TeamMember]):
                 (TeamMember, HUD.Refresh(TeamScorePairings))
             else:
-                (TeamMember, BuildHUD(TeamMember <# Current agent #>, TeamIndex <# Team index belonging #>, TeamScorePairings <# Teams currently active #>))
+                (TeamMember, BuildHUD(TeamMember <# Current agent #>, TeamIndex <# Team index belonging #>, TeamIndexTeamMembersMap, TeamScorePairings <# Teams currently active #>))
 
-    BuildHUD(InAgent : agent, InTeamIndex : int, TeamScorePairings : []tuple(int, int)):rr_score_hud =
+    BuildHUD(InAgent : agent, InTeamIndex : int, TeamIndexTeamMembersMap : [int][]agent, TeamScorePairings : []tuple(int, int)):rr_score_hud =
         TeamIndexScoreMap := Dict of TeamScorePairings
 
         TextureBlockSize := vector2:
@@ -80,14 +85,14 @@ rr_score_hud_manager := class:
                 set TeamBlocksCount += 1
                 
                 CrownTextureBlock := texture_block:
-                    DefaultImage := RR_UI.TeamScoring.T_Crown
+                    DefaultImage := Parameters.CrownTexture
                     DefaultTint := TeamTint
                     DefaultDesiredSize := TextureBlockSize
                 if(not TeamBlocksCount = 1):
                     CrownTextureBlock.SetVisibility(widget_visibility.Hidden)
 
                 YouUnderTextureBlock := texture_block:
-                    DefaultImage := RR_UI.TeamScoring.T_YouUnder
+                    DefaultImage := Parameters.YouUnderTexture
                     DefaultTint := TeamTint
                     DefaultDesiredSize := TextureBlockSize
 
@@ -104,7 +109,7 @@ rr_score_hud_manager := class:
                                 Slots := array:
                                     overlay_slot:
                                         Widget := texture_block:
-                                            DefaultImage := TeamIndex = InTeamIndex and RR_UI.TeamScoring.T_TeamBlockYou or RR_UI.TeamScoring.T_TeamBlock
+                                            DefaultImage := TeamIndex = InTeamIndex and Parameters.TeamBlockYouTexture or Parameters.TeamBlockTexture
                                             DefaultTint := TeamTint
                                             DefaultDesiredSize := TextureBlockSize
                                     overlay_slot:
@@ -119,7 +124,13 @@ rr_score_hud_manager := class:
                         stack_box_slot:
                             Widget := YouUnderTextureBlock
 
-                TeamScoreStackBox.SetVisibility(TeamIndexScoreMap[TeamIndex] and widget_visibility.Visible or widget_visibility.Collapsed)
+                WidgetVisibility := if(TeamIndexTeamMembersMap[TeamIndex][0]):
+                    Print("There is a team member on Team Index {TeamIndex}, so it will be visible on HUD")
+                    widget_visibility.Visible
+                else:
+                    Print("There is no team members on Team Index {TeamIndex}, so it will not be visible on HUD")
+                    widget_visibility.Collapsed
+                TeamScoreStackBox.SetVisibility(WidgetVisibility)
 
                 stack_box_slot:
                     HorizontalAlignment := horizontal_alignment.Right
@@ -175,7 +186,7 @@ rr_score_hud := class:
                 TeamIndexScore := SortedTeamScores[Position]
                 TeamTint := TeamIndexColorMap[TeamIndexScore(0)]
             then:
-                Print("Updating {Position} to be Team {TeamIndexScore(0)} with Score {TeamIndexScore(1)}")
+                Print("Updating {Position} to be visible with Team {TeamIndexScore(0)} with Score {TeamIndexScore(1)}")
                 TeamStackBox.SetVisibility(widget_visibility.Visible)
                 TeamBoxTextBlock.SetText(ToMessage(TeamIndexScore(1)))
                 if(TeamIndexScore(0) = BelongingTeamIndex):
@@ -188,5 +199,6 @@ rr_score_hud := class:
                 TeamBoxTextureBlock.SetTint(TeamTint)
                 YouFlagTextureBlock.SetTint(TeamTint)
             else:
+                Print("Updating {Position} to be collapsed")
                 TeamStackBox.SetVisibility(widget_visibility.Collapsed)
         Self

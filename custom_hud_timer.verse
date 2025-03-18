@@ -1,6 +1,8 @@
 using { /Fortnite.com/Devices }
 using { /Verse.org/Simulation }
 
+using { FN_Gameplay }
+
 custom_hud_timer := class:
 
     # ! This custom timer only displays in seconds
@@ -24,20 +26,18 @@ custom_hud_timer := class:
         race:
             loop:
                 MaybeAgent := StopEvent.Await()
-                if(not MaybeAgent?):            # If there is no agent
-                    return
-                else if(MaybeAgent? = InAgent): # If there is an agent and the agent is self
-                    return
+                if(not MaybeAgent? or MaybeAgent? = InAgent):
+                    break
             loop:
                 if(TimeLeft <= 0):
-                    HUDMessageDevice.Show(InAgent, IntToMessage(TimeLeft), ?DisplayTime:=1.0)
-                    Sleep(1.0)
+                    HUDMessageDevice.Show(InAgent, IntToMessage(0), ?DisplayTime:=1.0)
+                    AwaitTimer(1.0)
+                    SuccessEvent.Signal(option{InAgent})
                     break
                 HUDMessageDevice.Show(InAgent, IntToMessage(TimeLeft), ?DisplayTime:=1.0)
-                Sleep(1.0)
+                AwaitTimer(1.0)
                 set TimeLeft -= 1
         HUDMessageDevice.Hide(InAgent)
-        SuccessEvent.Signal(option{InAgent})
 
     Stop():void =
         StopEvent.Signal(false)

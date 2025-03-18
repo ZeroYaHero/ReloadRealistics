@@ -29,7 +29,7 @@ rr_device := class(creative_device):
             Color := NamedColors.Red
         rr_selectable_team_parameter:
             Index := 3
-            Color := NamedColors.Green
+            Color := NamedColors.LimeGreen
         rr_selectable_team_parameter:
             Index := 4
             Color := NamedColors.Yellow
@@ -41,6 +41,8 @@ rr_device := class(creative_device):
 
     @editable       InitialStormPhaseRadiusCM : float = 8500.0
 
+    @editable       ConfigType : rr_abstract_config = rr_config_duos{}
+
     OnBegin<override>()<suspends>:void =
         if:
             set MainDevicePlayspaceMap[GetSession()] = GetPlayspace()
@@ -48,11 +50,9 @@ rr_device := class(creative_device):
             DBNODevice := GetFirstTaggedOfType(combat_dbno_device{}, down_but_not_out_device)
             InitializeTeamCombatInteractionManager(DBNODevice, GetPlayspace().GetTeamCollection())
             AnalyzerAwarder := BuildAnalyzerAwarder()
-            AnalyzerAwarder.Initialize()
             TeamSelector := BuildTeamSelector()
             CombatManager := BuildCombatManager(DBNODevice)
             FiniteStateMachine := BuildFSM(TeamSelector, CombatManager)
-            
             FiniteStateMachine.Initialize(rr_state.NotEnoughPlayers)
         else:
             PrintAndErr("Failed to add MainDevicePlayspace to WeakMap")
@@ -65,6 +65,7 @@ rr_device := class(creative_device):
 
             CombatStartingTimer := GetFirstTaggedOfType(reboot_van_starting_timer_tag{}, timer_device) 
             TeamSelectStartingTimer := GetFirstTaggedOfType(team_select_starting_timer_tag{}, timer_device)
+            PlayersVotingTimer := GetFirstTaggedOfType(players_voting_timer_tag{}, timer_device)
 
             RoundSettingsDevice := GetFirstTaggedOfType(round_settings_tag{}, round_settings_device)
             EndGameDevice := GetFirstTaggedOfType(end_game_device_tag{}, end_game_device)
@@ -74,6 +75,7 @@ rr_device := class(creative_device):
             AutoStartVoteTimer := GetFirstTaggedOfType(auto_vote_ui_tag{}, timer_device)
             AutoStartVoteUI := GetFirstTaggedOfType(auto_vote_ui_tag{}, popup_dialog_device)
             AutoStartFailedHUD := GetFirstTaggedOfType(auto_vote_ui_tag{}, hud_message_device)
+            PlayerCounterDevice := GetFirstTaggedOfType(player_counter_device_tag{}, player_counter_device)
 
             Positions := BuildPositions()
 
@@ -86,7 +88,6 @@ rr_device := class(creative_device):
     BuildCombatManager<internal>(DBNODevice : down_but_not_out_device):rr_combat_manager = 
         rr_combat_manager:
             DBNODevice := DBNODevice
-            PrefireMutatorZone := GetFirstTaggedOfType(prefire_mutator_tag{}, mutator_zone_device)
             StormController := GetFirstTaggedOfType(basic_storm_tag{}, basic_storm_controller_device)
             SupplyDropSpawners := GetTaggedObjects(supply_drops_tag{}, supply_drop_spawner_device)
             CustomBarrierTimerHUD := custom_hud_timer:
@@ -99,12 +100,15 @@ rr_device := class(creative_device):
             LoseRoundHUD := GetFirstTaggedOfType(lose_round_tag{}, hud_message_device)
             SupplyDropTimesAndQuantities := array:
                 (10.0, 2)
-                (60.0, 3)
+                (45.0, 3)
                 (60.0, 2)
 
     BuildAnalyzerAwarder<internal>():rr_analyzer_awarder =
-        rr_analyzer_awarder:
+        AnalyzerAwarder := rr_analyzer_awarder:
+            CollectedCoin := GetFirstTaggedOfType(coin_collectible{}, accolades_device)
+            Collectibles := GetTaggedObjects(coin_collectible{}, collectible_object_device)
             LobbyAFK := GetFirstTaggedOfType(lobby_afk{}, accolades_device)
+            LobbyMutator := GetFirstTaggedOfType(overall_hub_mutator_tag{}, mutator_zone_device)
             SelectedTeam := GetFirstTaggedOfType(selected_team{}, accolades_device)
             Rebooted := GetFirstTaggedOfType(rebooted{}, accolades_device)
             Knock := GetFirstTaggedOfType(knock_opponent{}, accolades_device)
@@ -114,6 +118,15 @@ rr_device := class(creative_device):
             WonRound := GetFirstTaggedOfType(won_round{}, accolades_device)
             PlayedGame := GetFirstTaggedOfType(played_game{}, accolades_device)
             WonGame := GetFirstTaggedOfType(won_game{}, accolades_device)
+            DefaultSelected := GetFirstTaggedOfType(default_selected{}, analytics_device)
+            SelectedLoadout1 := GetFirstTaggedOfType(selected_loadout_1{}, analytics_device)
+            SelectedLoadout2 := GetFirstTaggedOfType(selected_loadout_2{}, analytics_device)
+            SelectedLoadout3 := GetFirstTaggedOfType(selected_loadout_3{}, analytics_device)
+            SelectedLoadout4 := GetFirstTaggedOfType(selected_loadout_4{}, analytics_device)
+            SelectedLoadout5 := GetFirstTaggedOfType(selected_loadout_5{}, analytics_device)
+            SelectedLoadout6 := GetFirstTaggedOfType(selected_loadout_6{}, analytics_device)
+        AnalyzerAwarder.Initialize()
+        AnalyzerAwarder
 
     BuildTeamSelector<internal>():rr_team_selector = 
         rr_team_selector:
@@ -173,6 +186,7 @@ rr_device := class(creative_device):
             DisabledHUD := GetFirstTaggedOfType(reboot_disabled_hud_tag{}, hud_message_device)
             ItemGranter := GetFirstTaggedOfType(reboot_granted_item_tag{}, item_granter_device)
             TeamWipeHUD := GetFirstTaggedOfType(team_wipe_tag{}, hud_message_device)
+            TeamWipeSFX := GetFirstTaggedOfType(team_wipe_tag{}, audio_player_device)
             HoldToRebootTrigger := GetFirstTaggedOfType(hold_to_reboot_input_tag{}, input_trigger_device)
             HoldToRebootHUDNoAnim := GetFirstTaggedOfType(hold_to_reboot_hud_no_anim{}, hud_message_device)
             HoldToRebootHUDAnim := GetFirstTaggedOfType(hold_to_reboot_hud_anim{}, hud_message_device)
@@ -183,6 +197,7 @@ rr_device := class(creative_device):
             DBNODevice := DBNODevice
             RebootMessageFeed := RebootParameters.RebootMessageFeed
             SkyDiveTeleporters := GetTaggedObjects(reboot_skyzone_tag{}, teleporter_device)
+            RiftSFX := GetFirstTaggedOfType(rift_sfx_tag{}, audio_player_device)
             
     BuildScoreHUDManager<internal>():rr_score_hud_manager = 
         ScoreHUDManager := rr_score_hud_manager:

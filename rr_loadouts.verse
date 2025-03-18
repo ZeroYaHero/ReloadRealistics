@@ -24,6 +24,13 @@ rr_loadout_selector := class:
     LoadoutGranters : []item_granter_device
     RandomGranters : []item_granter_device
     ItemRemover : item_remover_device
+    LoadoutSubmissionTypes : []rr_analytic = array:
+        rr_analytic.Loadout1
+        rr_analytic.Loadout2
+        rr_analytic.Loadout3
+        rr_analytic.Loadout4
+        rr_analytic.Loadout5
+        rr_analytic.Loadout6
     var LastSelectedMap : [agent]int = map{}
     var KeepSelection : [agent]logic = map{}
     var CurrentlyBeingGrantedItems : []agent = array{}
@@ -63,14 +70,9 @@ rr_loadout_selector := class:
         WeaponSelectDialog.Hide(InAgent)
         KeepSelectDialog.Hide(InAgent)
 
-
     HideUI():void =
         WeaponSelectDialog.Hide()
         KeepSelectDialog.Hide()
-
-    ClearLoadouts(InAgents : []agent):void =
-        for(InAgent : InAgents):
-            ClearLoadout(InAgent)
 
     ClearLoadout(InAgent : agent):void =
         ItemRemover.Remove(InAgent)
@@ -93,6 +95,13 @@ rr_loadout_selector := class:
                 KeepSelectDialog.Show(InAgent)
         else:
             PrintAndErr("Loadout Selected Does Not Exist!")
+        if:
+            Manual?
+            LoadoutSubmissionType := LoadoutSubmissionTypes[Index]
+        then:
+            SubmitData(InAgent, LoadoutSubmissionType)
+        else:
+            SubmitData(InAgent, rr_analytic.DefaultLoadout)
         set CurrentlyBeingGrantedItems = CurrentlyBeingGrantedItems.RemoveAllElements(InAgent)
         
     # This should use the persistent map if set

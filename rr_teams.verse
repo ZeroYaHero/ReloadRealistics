@@ -41,16 +41,24 @@ rr_selectable_team := class:
 
     Show():void =
         # TODO: teleport logic
+        if { DisplaySelector.TeleportTo[DisplaySelector.GetTransform().TransZ(384.0)] }
+
         SelectVolume.Enable()
         DisplaySelector.Enable()
-        for(PlayerReferenceDevice : PlayerReferenceDevices):
+        for:
+            PlayerReferenceDevice : PlayerReferenceDevices
+        do:
             PlayerReferenceDevice.Enable()
 
     Hide():void =
         # TODO: teleport logic
+        if { DisplaySelector.TeleportTo[DisplaySelector.GetTransform().TransZ(-384.0)] }
+
         SelectVolume.Disable()
         DisplaySelector.Disable()
-        for(PlayerReferenceDevice : PlayerReferenceDevices):
+        for:
+            PlayerReferenceDevice : PlayerReferenceDevices
+        do:
             PlayerReferenceDevice.Disable()
 
 rr_team_selector := class:
@@ -65,16 +73,19 @@ rr_team_selector := class:
     var AgentToReference : [agent]player_reference_device = map{}
     var NotYetSelected : []agent = array{}
 
-    AwaitSelections():void =
-        spawn{AwaitUISelection()}
+    ListenToSelections():void =
+        spawn{ListenUISelections()}
         FortPlayspace := GetMainDevicePlayspace()
         TeamCollection := FortPlayspace.GetTeamCollection()
-        MaxNumberOfTeams := Max(MinimumSelectableTeams, Ceil(FortPlayspace.GetParticipants().Length / SelectableTeamCapacity))  or PrintAndErr("Unreachable: Ceil Operation Failed")
-        MaxTeamSize := Ceil(FortPlayspace.GetParticipants().Length / MaxNumberOfTeams)                                          or PrintAndErr("Unreachable: Ceil Operation Failed")
+        ParticipantCount := FortPlayspace.GetParticipants().Length
+        MaxNumberOfTeams := Max(MinimumSelectableTeams, Ceil(ParticipantCount / SelectableTeamCapacity))  or PrintAndErr("Unreachable: Ceil Operation Failed")
+        MaxTeamSize := Ceil(ParticipantCount / MaxNumberOfTeams)                                          or PrintAndErr("Unreachable: Ceil Operation Failed")
         for(Index -> SelectableTeam : SelectableTeams):
             if(Index < MaxNumberOfTeams):
-                spawn{AwaitVolumeSelection(SelectableTeam)}
+                Print("Showing/Awaiting Volume Selection")
+                spawn{ListenVolumeSelections(SelectableTeam)}
             else:
+                Print("Hiding Volume Selection")
                 SelectableTeam.Hide()
 
     GetSelectableTeamWithIndex(TeamIndex : int)<transacts><decides>:rr_selectable_team = 
@@ -123,80 +134,99 @@ rr_team_selector := class:
     Neutralize(InAgent : agent):void =
         if(GetMainDevicePlayspace().GetTeamCollection()._SetTeam[InAgent, NeutralTeamIndex, 100, true]):
             NeutralTeamSelector.ChangeTeam(InAgent)
-            set NotYetSelected += array{InAgent}
+            if(not NotYetSelected.Find[InAgent]):
+                set NotYetSelected += array{InAgent}
 
-    AwaitVolumeSelection<private>(InSelectableTeam : rr_selectable_team)<suspends>:void =
+    ListenVolumeSelections<private>(InSelectableTeam : rr_selectable_team)<suspends>:void =
         TeamCollection := GetMainDevicePlayspace().GetTeamCollection()
         InSelectableTeam.Show()
         loop:
             EnteredAgent := InSelectableTeam.SelectVolume.AgentEntersEvent.Await()
+            Print("Agent Entered Volume")
             if(not TeamCollection.IsOnTeam[EnteredAgent, InSelectableTeam.Index]):
-                if(PlayerIndexOnTeam := TeamCollection._SetTeam[EnteredAgent, InSelectableTeam.Index, 2, false]):
+                Print("EnteredAgent is not on Team")
+                if(PlayerIndexOnTeam := TeamCollection._SetTeam[EnteredAgent, InSelectableTeam.Index, 2, false] - 1):
                     InSelectableTeam.Selector.ChangeTeam(EnteredAgent)
+                    Print("Set Team Was Succesful")
                     if(CurrentPlayerReference := AgentToReference[EnteredAgent]):
                         CurrentPlayerReference.Clear()
+                        Print("Cleared old Reference")
                     if:
                         NewPlayerReference := InSelectableTeam.PlayerReferenceDevices[PlayerIndexOnTeam]
                         set AgentToReference[EnteredAgent] = NewPlayerReference
                     then:
                         NewPlayerReference.Register(EnteredAgent)
-                    GetGlobalAnalyzerAwarder().Award(EnteredAgent, rr_award.SelectedTeam)
+                        Print("Registered new Reference")
+                    AwardXP(EnteredAgent, rr_award.SelectedTeam)
                     set NotYetSelected = NotYetSelected.RemoveAllElements(EnteredAgent)
                 else:
+                    Print("Set Team Failed!")
                     FailedSelectHUD.Show(EnteredAgent)
 
-    AwaitUISelection<private>()<suspends>:void =
+    ListenUISelections<private>()<suspends>:void =
         TeamCollection := GetMainDevicePlayspace().GetTeamCollection()
         loop:
             AgentIndex := SelectTeamDialog.RespondingButtonEvent.Await()
             if:
                 SelectableTeam := SelectableTeams[AgentIndex(1)]
                 TeamIndex := SelectableTeam.Index
+                Print("Selected Button Index {AgentIndex(1)} which is Team Index {TeamIndex}")
                 TeamCollection._SetTeam[AgentIndex(0), TeamIndex, SelectableTeamCapacity, false]
             then:
                 SelectableTeam.Selector.ChangeTeam(AgentIndex(0))
-                GetGlobalAnalyzerAwarder().Award(AgentIndex(0), rr_award.SelectedTeam)
+                AwardXP(AgentIndex(0), rr_award.SelectedTeam)
                 set NotYetSelected = NotYetSelected.RemoveAllElements(AgentIndex(0))
+                Print("Team Set on {TeamIndex} Succeeded! Removed them from NotYetSelected")
                 RefreshUI()
             else:
-                FailedSelectHUD.Show(AgentIndex(0))
                 ShowUI(AgentIndex(0))
+                Print("Team Set Failed! Attempted to Show Again")
+
+    AwaitUISelection<public>(InAgent : agent)<suspends>:void =
+        loop:
+            AgentIndex := SelectTeamDialog.RespondingButtonEvent.Await()
+            Print("Agent Selected a Team??? Why no Print")
+            if(AgentIndex(0) = InAgent):
+                break
 
     AutoSelect<public>():void = 
         HideUI()
         FortPlayspace := GetMainDevicePlayspace()
         TeamCollection := FortPlayspace.GetTeamCollection()
-        MaxNumberOfTeams := Max(MinimumSelectableTeams, Ceil(FortPlayspace.GetParticipants().Length / SelectableTeamCapacity))  or PrintAndErr("Unreachable: Ceil Operation Failed")
-        MaxTeamSize := Ceil(FortPlayspace.GetParticipants().Length / MaxNumberOfTeams)                                          or PrintAndErr("Unreachable: Ceil Operation Failed")
+        ParticipantCount := FortPlayspace.GetParticipants().Length
+        Print("Participant Count: {ParticipantCount}")
+        MaxNumberOfTeams := Max(MinimumSelectableTeams, Ceil(ParticipantCount / SelectableTeamCapacity))  or PrintAndErr("Unreachable: Ceil Operation Failed")
+        MaxTeamSize := Ceil(ParticipantCount / MaxNumberOfTeams)                                          or PrintAndErr("Unreachable: Ceil Operation Failed")
         Print("MaxNumberOfTeams: {MaxNumberOfTeams}")
         Print("MaxTeamSize: {MaxTeamSize}")
             for(NotYetSelectedAgent : NotYetSelected):
                 Print("Auto Selecting for Agent")
                 loop:
-                    TeamIndexSizePairings := SortSelectableTeamsBySize(true)
+                    TeamIndexMemberPairings := SortSelectableTeamsBySize(true)
                     for:
-                        IndexSizePair : TeamIndexSizePairings
+                        IndexSizePair : TeamIndexMemberPairings
                         PrintInFor["TeamIndex: {IndexSizePair(0)}, TeamSize: {IndexSizePair(1).Length}"]
                         IndexSizePair(1).Length < MaxTeamSize
                         PrintInFor["Size less than MaxTeamSize"]
                         TeamCollection._SetTeam[NotYetSelectedAgent, IndexSizePair(0), SelectableTeamCapacity, false]
                     do:
                         Print("Successfully Set Team")
-                        GetGlobalAnalyzerAwarder().Award(NotYetSelectedAgent, rr_award.SelectedTeam)
+                        AwardXP(NotYetSelectedAgent, rr_award.SelectedTeam)
                         set NotYetSelected = NotYetSelected.RemoveAllElements(NotYetSelectedAgent)
                         break
                     break
 
-    SortSelectableTeamsBySize(Decreasing : logic):[]tuple(int, []agent) =
+    SortSelectableTeamsBySize(Decreasing : logic):[]tuple(int, []agent) = 
         TeamCollection := GetMainDevicePlayspace().GetTeamCollection()
-        TeamIndexSizePairings := for:
+        TeamIndexMemberPairings := for:
             SelectableTeam : SelectableTeams
+            TeamMembers := TeamCollection._GetTeamMembers(SelectableTeam.Index)
         do:
-            (SelectableTeam.Index, TeamCollection._GetTeamMembers(SelectableTeam.Index))
+            (SelectableTeam.Index, TeamMembers)
         if(Decreasing?):
-            SortBy(TeamIndexSizePairings, TupleSecondLongerComp)
+            SortBy(TeamIndexMemberPairings, TupleSecondLongerComp)
         else:
-            SortBy(TeamIndexSizePairings, TupleSecondShorterComp)
+            SortBy(TeamIndexMemberPairings, TupleSecondShorterComp)
 
 # Team Select Player Member Message
 DialogPlayerMemberMessage<localizes><internal>(Enumeration : int, InAgent : agent):message = "{Enumeration}. {InAgent}\n"

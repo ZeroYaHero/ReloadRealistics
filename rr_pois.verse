@@ -62,13 +62,10 @@ rr_poi<public> := class:
         for(Barrier : Barriers):
             Barrier.Disable()
 
-    # ! Is this really needed?
-    # TODO:
     EnableBarriers():void =
         for(Barrier : Barriers):
             Barrier.Enable()
 
-    # FIXME: Potential fixme is if the respawning takes too long, are we going to need to check if the player is okay?
     TeleportTeams(TeamsAgents : [][]agent)<suspends>:void =
         var StickyTasks : []sticky_task = array{}
         if(PairCount := Ceil(TeamsAgents.Length / 2)):
