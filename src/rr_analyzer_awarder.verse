@@ -15,28 +15,6 @@ AwardXP<public>(InAgent : agent, AwardType : rr_award):void =
 SubmitData<public>(InAgent : agent, SubmissionType : rr_analytic):void =
     GetGlobalAnalyzerAwarder().SubmitData(InAgent, SubmissionType)
 
-analytic_accolade_tag := class(tag){}
-    # XP
-    lobby_afk := class(analytic_accolade_tag){}
-    selected_team := class(analytic_accolade_tag){}
-    rebooted := class(analytic_accolade_tag){}
-    knock_opponent := class(analytic_accolade_tag){}
-    eliminate_opponent := class(analytic_accolade_tag){}
-    team_wipe := class(analytic_accolade_tag){}
-    played_round := class(analytic_accolade_tag){}
-    won_round := class(analytic_accolade_tag){}
-    played_game := class(analytic_accolade_tag){}
-    won_game := class(analytic_accolade_tag){}
-    coin_collectible := class(analytic_accolade_tag){}
-    # Selected Loadout
-    default_selected := class(analytic_accolade_tag){}
-    selected_loadout_1 := class(analytic_accolade_tag){}
-    selected_loadout_2 := class(analytic_accolade_tag){}
-    selected_loadout_3 := class(analytic_accolade_tag){}
-    selected_loadout_4 := class(analytic_accolade_tag){}
-    selected_loadout_5 := class(analytic_accolade_tag){}
-    selected_loadout_6 := class(analytic_accolade_tag){}
-
 rr_analytic<public> := enum:
     DefaultLoadout
     Loadout1
@@ -56,14 +34,17 @@ rr_award<public> := enum:
     WonRound
     PlayedGame
     WonGame
+    OpenSupplyDrop
 
 rr_analyzer_awarder<public> := class:
     
     CollectedCoin<public> : accolades_device
     Collectibles<public> : []collectible_object_device
     
-    LobbyMutator<public> : mutator_zone_device
     LobbyAFK<public> : accolades_device
+    LobbyMutator<public> : mutator_zone_device
+
+    SupplyDropOpen<public> : accolades_device
 
     SelectedTeam<public> : accolades_device
     Rebooted<public> : accolades_device
@@ -91,6 +72,7 @@ rr_analyzer_awarder<public> := class:
 
         for(Collectible : Collectibles):
             Collectible.CollectedEvent.Subscribe(OnCollected)
+
         spawn{AwardAFKXP()}
 
     OnCollected<private>(InAgent : agent):void =
@@ -113,6 +95,7 @@ rr_analyzer_awarder<public> := class:
             rr_award.WonRound => WonRound.Award(InAgent)
             rr_award.PlayedGame => PlayedGame.Award(InAgent)
             rr_award.WonGame => WonGame.Award(InAgent)
+            rr_award.OpenSupplyDrop => SupplyDropOpen.Award(InAgent)
 
     (rr_analyzer_awarder:)SubmitData(InAgent : agent, SubmissionType : rr_analytic):void =
         case(SubmissionType):

@@ -3,19 +3,6 @@ using { /Verse.org/Simulation }
 using { /Fortnite.com/Devices }
 using { FN_Gameplay }
 
-weapon_select_tag := class(tag){}
-    weapon_select_device := class(weapon_select_tag){}
-    loadout_granter_1 := class(weapon_select_tag){}
-    loadout_granter_2 := class(weapon_select_tag){}
-    loadout_granter_3 := class(weapon_select_tag){}
-    loadout_granter_4 := class(weapon_select_tag){}
-    loadout_granter_5 := class(weapon_select_tag){}
-    loadout_granter_6 := class(weapon_select_tag){}
-    always_granter := class(weapon_select_tag){}
-    random_granter := class(weapon_select_tag){}
-    item_remover := class(weapon_select_tag){}
-    keep_loadout_select_device := class(weapon_select_tag){}
-
 rr_loadout_selector := class:
 
     WeaponSelectDialog : popup_dialog_device
@@ -79,7 +66,6 @@ rr_loadout_selector := class:
     
     GrantLoadout(InAgent : agent, Index : int, Manual : logic)<suspends>:void =
         set CurrentlyBeingGrantedItems += array{InAgent}
-        Print("Granting to Agent")
         if { set LastSelectedMap[InAgent] = Index }
         if(LoadoutGranter := LoadoutGranters[Index]):
             ClearLoadout(InAgent)
@@ -95,13 +81,8 @@ rr_loadout_selector := class:
                 KeepSelectDialog.Show(InAgent)
         else:
             PrintAndErr("Loadout Selected Does Not Exist!")
-        if:
-            Manual?
-            LoadoutSubmissionType := LoadoutSubmissionTypes[Index]
-        then:
+        if(LoadoutSubmissionType := LoadoutSubmissionTypes[Index]):
             SubmitData(InAgent, LoadoutSubmissionType)
-        else:
-            SubmitData(InAgent, rr_analytic.DefaultLoadout)
         set CurrentlyBeingGrantedItems = CurrentlyBeingGrantedItems.RemoveAllElements(InAgent)
         
     # This should use the persistent map if set
@@ -110,3 +91,4 @@ rr_loadout_selector := class:
             spawn{GrantLoadout(InAgent, LastSelected, false)}
         else:
             spawn{GrantLoadout(InAgent, 0, false)}
+            SubmitData(InAgent, rr_analytic.DefaultLoadout)

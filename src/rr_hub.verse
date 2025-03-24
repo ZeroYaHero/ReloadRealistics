@@ -3,9 +3,6 @@ using { /Fortnite.com/Devices }
 using { /Verse.org/Simulation }
 using { FN_Gameplay }
 
-rr_hub_tags := class(tag){}
-    overall_hub_mutator_tag := class(rr_hub_tags){}
-
 rr_hub_manager := class(rr_state_handler_interface):
 
     # Dependencies
@@ -15,55 +12,59 @@ rr_hub_manager := class(rr_state_handler_interface):
     WaitingForPlayersTimer : timer_device
     AutoStartMinimum : int
     AutoStartVotingTimer : timer_device
-    PlayersVotingTimer : timer_device
     AutoStartVoteUI : popup_dialog_device
     AutoStartFailedHUD : hud_message_device
+    RebootVanTimer : timer_device
+    HUBMutator : mutator_zone_device
     # Rematch / Requeue
     WinnerRematchProp : creative_prop
     # Teleporters
     SpawnTeleporters : []teleporter_device
 
-    OnWaitingForPlayers<override>()<suspends>:void =
+    EnterWaitingForPlayers<override>()<suspends>:void =
+        defer:
+            WaitingForPlayersTimer.Reset()
         var InitializedParticipants : []agent = ParticipantManager.GetInitializedParticipants() 
         var InitializedParticipantsCount : int = InitializedParticipants.Length
-        ParticipantManager.GetParticipants().TeleportToOrRespawnAt(SpawnTeleporters)
-        loop:
-            if(InitializedParticipants = 1):
-                OnePlayerHUD.Show()
-                ParticipantManager.ParticipantInitializedEvent.Await()
-                OnePlayerHUD.Hide()
-            set InitializedParticipants = ParticipantManager.GetInitializedParticipants() 
-            set InitializedParticipantsCount = InitializedParticipants.Length
-            InitializedParticipants.TeleportToOrRespawnAt(SpawnTeleporters)
-            if(InitializedParticipantsCount < AutoStartMinimum):
-                race:
-                    # Auto Start Voting
-                    loop:
-                        WaitingForPlayersTimer.Start()
-                        WaitingForPlayersTimer.SuccessEvent.Await()
-                        AutoStart := BoyerMooreAutoStartVote()
-                        if(AutoStart?): # change to local function start logic
-                            return
-                        WaitingForPlayersTimer.Reset()
-                        AutoStartFailedHUD.Show()
-                    # Waiting for Auto Start Minimum or 1 Player
-                    loop:
-                        race:
-                            ParticipantManager.ParticipantInitializedEvent.Await()
-                            ParticipantManager.ParticipantExitEvent.Await()
-                        set InitializedParticipantsCount = ParticipantManager.GetInitializedParticipants().Length
-                        if(InitializedParticipantsCount >= AutoStartMinimum or InitializedParticipantsCount = 1):
-                            break
-            if(InitializedParticipantsCount >= AutoStartMinimum):
-                break
-            else if(InitializedParticipantsCount = 1):
-                # continue
+        ParticipantManager.GetInitializedParticipants().TeleportToOrRespawnAt(SpawnTeleporters)
+        if(InitializedParticipantsCount < 2):
+            OnePlayerHUD.Show()
+            ParticipantManager.ParticipantInitializedEvent.Await()
+            OnePlayerHUD.Hide()
+        set InitializedParticipants = ParticipantManager.GetInitializedParticipants() 
+        set InitializedParticipantsCount = InitializedParticipants.Length
+        if(InitializedParticipantsCount < AutoStartMinimum):
+            race:
+                # Auto Start Voting
+                loop:
+                    WaitingForPlayersTimer.Start()
+                    WaitingForPlayersTimer.SuccessEvent.Await()
+                    AutoStart := BoyerMooreAutoStartVote()
+                    if(AutoStart?): # change to local function start logic
+                        break
+                    WaitingForPlayersTimer.Reset()
+                    AutoStartFailedHUD.Show()
+                # Waiting for Auto Start Minimum or 1 Player
+                loop:
+                    race:
+                        ParticipantManager.ParticipantInitializedEvent.Await()
+                        ParticipantManager.ParticipantExitEvent.Await()
+                    set InitializedParticipantsCount = ParticipantManager.GetInitializedParticipants().Length
+                    if(InitializedParticipantsCount = 1):
+                        spawn{EnterWaitingForPlayers()}
+                        return
+                    else if(InitializedParticipantsCount >= AutoStartMinimum):
+                        break
+        RebootVanTimer.Start()
+    
+    EnterTeamSelect<override>()<suspends>:void =
+        HUBMutator.Jiggle()
 
-    BoyerMooreAutoStartVote()<suspends>:logic =
+    BoyerMooreAutoStartVote<private>()<suspends>:logic =
         defer:
-            PlayersVotingTimer.Reset()
+            AutoStartVotingTimer.Reset()
             AutoStartVoteUI.Hide()
-        PlayersVotingTimer.Start()
+        AutoStartVotingTimer.Start()
         FortPlayspace := GetMainDevicePlayspace()
         AgentVotedEvent : event(tuple(agent, int)) = event(tuple(agent, int)){}
         var AgentsParticipated : []agent = array{}
@@ -100,18 +101,27 @@ rr_hub_manager := class(rr_state_handler_interface):
                 AgentVotedEvent.Signal(TimedOutAgent, 1)
         return WinningVote = 0 and true or false
 
-    OnRematchRequeue<override>()<suspends>:void =
+    EnterRematchRequeue<override>()<suspends>:void =
         ParticipantManager.GetParticipants().TeleportToOrRespawnAt(SpawnTeleporters)
         WinnerRematchPropTransform := WinnerRematchProp.GetTransform()
         if { WinnerRematchProp.TeleportTo[WinnerRematchPropTransform + v3(0, 0, 960)]}
 
-    OnOpponentsLeft<override>()<suspends>:void =
+    EnterOpponentsLeft<override>()<suspends>:void =
         ParticipantManager.GetParticipants().TeleportToOrRespawnAt(SpawnTeleporters)
         for(Participant : ParticipantManager.GetParticipants()):
             AwardXP(Participant, rr_award.PlayedGame)
 
-    GetStateListenersMap<override>()<transacts>:[comparable][]fn_gameplay_state_listener =
+    GetStateListenersMap<override>()<transacts>:[comparable][]fn_gameplay_state_listenable =
         map:
-            rr_state_enum.WaitingForPlayers => array{CreateStateListener(OnWaitingForPlayers, ?SetStateOnExecution := option{rr_state_enum.TeamSelect})}
-            rr_state_enum.RematchRequeue => array{CreateStateListener(OnRematchRequeue)}
-            rr_state_enum.OpponentsLeft => array{CreateStateListener(OnOpponentsLeft)}
+            rr_state_enum.WaitingForPlayers => array:
+                fn_gameplay_state_listener:
+                    EnterCallback := option{EnterWaitingForPlayers}
+            rr_state_enum.TeamSelect => array:
+                fn_gameplay_state_listener:
+                    EnterCallback := option{EnterTeamSelect}
+            rr_state_enum.RematchRequeue => array:
+                fn_gameplay_state_listener:
+                    EnterCallback := option{EnterRematchRequeue}
+            rr_state_enum.OpponentsLeft => array:
+                fn_gameplay_state_listener:
+                    EnterCallback := option{EnterOpponentsLeft}

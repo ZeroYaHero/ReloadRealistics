@@ -1,5 +1,6 @@
 using { /UnrealEngine.com/Temporary/SpatialMath }
 using { /UnrealEngine.com/Temporary/UI }
+using { /UnrealEngine.com/Temporary }
 using { /Verse.org/Simulation/Tags }
 using { /Verse.org/Simulation }
 using { /Fortnite.com/Devices }
@@ -9,64 +10,85 @@ using { /Fortnite.com/UI }
 
 using { FN_Gameplay }
 
-hud_verse_tag := class(tag){}
-    generic_popup_dialog_tag := class(hud_verse_tag){}
-    generic_hud_message_tag := class(hud_verse_tag){}
-    watermark_hud_tag := class(hud_verse_tag){}
-    # TODO!: Make the generic timers and stuff
+rr_score_hud_parameters<public> := class<concrete>:
 
-RR_UI := module:
-    TeamScoring<public> := module{}
-
-rr_score_hud_parameters := class<concrete>:
-
-    @editable   HorizontalPadding : float = 10.0
-    @editable   CrownTeamBlockPadding : float = 5.0
-    @editable   TextureBlockXYSize : float = 75.0
-    @editable   TextShadowOpacity : float = 0.3
-    @editable   TextColor : color = color:
+    @editable   HorizontalPadding<public> : float = 10.0
+    @editable   CrownTeamBlockPadding<public> : float = 5.0
+    @editable   TextureBlockXYSize<public> : float = 75.0
+    @editable   TextShadowOpacity<public> : float = 0.3
+    @editable   TextColor<public> : color = color:
         R := 1.0
         G := 1.0
         B := 1.0
-    @editable   TextShadowColor : color = color:
+    @editable   TextShadowColor<public> : color = color:
         R := 0.0
         G := 0.0
         B := 0.0
-    @editable   TextShadowOffset : vector2 = vector2:
+    @editable   TextShadowOffset<public> : vector2 = vector2:
         X := 2.0
         Y := 1.5
-    @editable   Anchor : vector2 = vector2:
+    @editable   Anchor<public> : vector2 = vector2:
         X := 1.0
         Y := 0.0
-    @editable   Alignment : vector2 = vector2:
+    @editable   Alignment<public> : vector2 = vector2:
         X := 1.0
         Y := 0.0
-    @editable   PositionOffset : vector2 = vector2:
+    @editable   PositionOffset<public> : vector2 = vector2:
         X := 35.0
         Y := 60.0
 
-    @editable   TeamBlockTexture : texture = RR_UI.TeamScoring.T_TeamBlock
-    @editable   TeamBlockYouTexture : texture = RR_UI.TeamScoring.T_TeamBlockYou
-    @editable   YouUnderTexture : texture = RR_UI.TeamScoring.T_YouUnder
-    @editable   CrownTexture : texture = RR_UI.TeamScoring.T_Crown
+    @editable   TeamBlockTexture<public> : texture = RR_UI.TeamScoring.T_TeamBlock
+    @editable   TeamBlockYouTexture<public> : texture = RR_UI.TeamScoring.T_TeamBlockYou
+    @editable   YouUnderTexture<public> : texture = RR_UI.TeamScoring.T_YouUnder
+    @editable   CrownTexture<public> : texture = RR_UI.TeamScoring.T_Crown
 
-rr_score_hud_manager := class:
+rr_score_view := class(rr_state_handler_interface):
 
     Parameters : rr_score_hud_parameters
-    WatermarkHUD : hud_message_device
+    ScoreModel : rr_score_model
+    TeamSelector : rr_team_selector
     TeamIndexColorMap : [int]color
     var AgentHUDMap : [agent]rr_score_hud = map{}
 
-    Refresh(TeamIndexTeamMembersMap : [int][]agent, TeamScorePairings : []tuple(int, int)):void =
-        WatermarkHUD.Show()
-        set AgentHUDMap = Dict of for:
-            TeamIndex -> TeamMembers : TeamIndexTeamMembersMap
+    EnterCombatRound<override>()<suspends>:void =
+        Refresh()
+
+    ExitCombatRound<override>()<suspends>:void =
+        Refresh()
+
+    EnterTeamSelect<override>()<suspends>:void =
+        loop:
+            TeamSelector.TeamSelectedEvent.Await()
+            Refresh()
+
+    Refresh():void =
+        SortedTeamScorePairings := GetSortedTeamScorePairings()
+        TeamIndexTeamMembersMap := TeamSelector.GetSelectableTeamMembersMap()
+
+        var SeenAgents : []agent = array{}
+        NewAgentHUDMap := Dict of for:
+            TeamIndex -> TeamMembers : TeamSelector.GetSelectableTeamMembersMap()
             TeamMember : TeamMembers
         do:
+            set SeenAgents += array{TeamMember}
             if(HUD := AgentHUDMap[TeamMember]):
-                (TeamMember, HUD.Refresh(TeamScorePairings))
+                (TeamMember, HUD.Refresh(TeamIndex, SortedTeamScorePairings))
             else:
-                (TeamMember, BuildHUD(TeamMember <# Current agent #>, TeamIndex <# Team index belonging #>, TeamIndexTeamMembersMap, TeamScorePairings <# Teams currently active #>))
+                (TeamMember, BuildHUD(TeamMember <# Current agent #>, TeamIndex <# Team index belonging #>, TeamIndexTeamMembersMap, SortedTeamScorePairings <# Teams currently active #>))
+
+        for:
+            Agent -> HUD : AgentHUDMap
+            not SeenAgents.Find[Agent]
+            PlayerUI := GetPlayerUI[player[Agent]]
+        do:
+            PlayerUI.RemoveWidget(HUD.OverallCanvas)
+
+        set AgentHUDMap = NewAgentHUDMap
+
+    GetSortedTeamScorePairings():[]tuple(int, int) =
+        ScorePairings := for(TeamIndex -> TeamMembers : TeamSelector.GetSelectableTeamMembersMap()):
+            (TeamIndex, ScoreModel.GetMaxScoreOf(TeamMembers))
+        SortBy(ScorePairings, TupleSecondGreaterComp)
 
     BuildHUD(InAgent : agent, InTeamIndex : int, TeamIndexTeamMembersMap : [int][]agent, TeamScorePairings : []tuple(int, int)):rr_score_hud =
         TeamIndexScoreMap := Dict of TeamScorePairings
@@ -158,21 +180,29 @@ rr_score_hud_manager := class:
             Print("Failed to add Widget")
     
         HUD := rr_score_hud:
-            BelongingTeamIndex := InTeamIndex
             TeamIndexColorMap := TeamIndexColorMap
             HorizontalTeamStackBox := HorizontalTeamStackBox
             OverallCanvas := OverallCanvas
 
         HUD
 
+    GetStateListenersMap<override>()<transacts>:[comparable][]fn_gameplay_state_listenable =
+        map:
+            rr_state_enum.CombatRound => array:
+                fn_gameplay_state_listener:
+                    EnterCallback := option{EnterCombatRound}
+                    ExitCallback := option{ExitCombatRound}
+            rr_state_enum.TeamSelect => array:
+                fn_gameplay_state_listener:
+                    EnterCallback := option{EnterTeamSelect}
+                    
 rr_score_hud := class:
 
-    BelongingTeamIndex : int
     TeamIndexColorMap : [int]color
     HorizontalTeamStackBox : stack_box
     OverallCanvas : canvas
 
-    Refresh(SortedTeamScores : []tuple(int, int)):rr_score_hud =
+    Refresh(BelongingTeamIndex : int, SortedTeamScores : []tuple(int, int)):rr_score_hud =
         for:
             Position -> Widget : HorizontalTeamStackBox.Slots 
             TeamStackBox := stack_box[HorizontalTeamStackBox.Slots[Position].Widget]
@@ -186,7 +216,7 @@ rr_score_hud := class:
                 TeamIndexScore := SortedTeamScores[Position]
                 TeamTint := TeamIndexColorMap[TeamIndexScore(0)]
             then:
-                Print("Updating {Position} to be visible with Team {TeamIndexScore(0)} with Score {TeamIndexScore(1)}")
+                # Print("Updating {Position} to be visible with Team {TeamIndexScore(0)} with Score {TeamIndexScore(1)}")
                 TeamStackBox.SetVisibility(widget_visibility.Visible)
                 TeamBoxTextBlock.SetText(ToMessage(TeamIndexScore(1)))
                 if(TeamIndexScore(0) = BelongingTeamIndex):
@@ -199,6 +229,6 @@ rr_score_hud := class:
                 TeamBoxTextureBlock.SetTint(TeamTint)
                 YouFlagTextureBlock.SetTint(TeamTint)
             else:
-                Print("Updating {Position} to be collapsed")
+                # Print("Updating {Position} to be collapsed")
                 TeamStackBox.SetVisibility(widget_visibility.Collapsed)
         Self

@@ -14,39 +14,22 @@ using { FN_Gameplay }
 
 # TODO: Tab spacing should be consistent for all things (like editables). Same for spacing on classes.
 
-reboot_verse_tag := class(tag){}
-    reboot_respawn_tag := class(reboot_verse_tag){}
-    reboot_status_timer_center_tag := class(reboot_verse_tag){}
-    reboot_status_timer_corner_tag := class(reboot_verse_tag){}
-    team_wipe_tag := class(reboot_verse_tag){}
-    reboot_granted_item_tag := class(reboot_verse_tag){}
-    reboot_skyzone_tag := class(reboot_verse_tag){}
-    reboot_disabled_hud_tag := class(reboot_verse_tag){}
-    hold_to_reboot_input_tag := class(reboot_verse_tag){}
-    hold_to_reboot_hud_no_anim := class(reboot_verse_tag){}
-    hold_to_reboot_hud_anim := class(reboot_verse_tag){}
-    reboot_message_feed_tag := class(reboot_verse_tag){}
-    # cause_knock_xp_tag := class(reboot_verse_tag){}
-    rift_sfx_tag := class(reboot_verse_tag){}
+rr_reboot_state<public> := class<concrete>:
 
-rr_reboot_state := class<concrete>:
+    @editable       TimeToReboot<public> : float = 5.0
+    @editable       Duration<public> : float = 30.0
+    @editable       ShowTimer<public> : logic = false
 
-    @editable       TimeToReboot : float = 5.0
-    @editable       Duration : float = 30.0
-    @editable       ShowTimer : logic = false
+rr_reboot_parameters<public> := class<concrete>:
 
-rr_reboot_parameters := class<concrete>:
-
-    @editable       SkyZ : float = 384.0 * 40
-    @editable       KnockSkip : float = 2.0
-    @editable       EliminationSkip : float = 4.0
-    @editable       TeamWipeSkip : float = 10.0
-    @editable       MinimumTeammatesAliveRequired : int = 1
-    @editable       MaximumRebootBank : int = 1
-    @editable       RebootRift : creative_prop_asset = DefaultCreativePropAsset
-    @editable       RebootMessageFeed : elimination_feed_device = elimination_feed_device{}
-    @editable       RebootRiftLifetime : float = 10.0
-    @editable       RebootStates : []rr_reboot_state = array:
+    @editable       SkyZ<public> : float = 384.0 * 40
+    @editable       KnockSkip<public> : float = 2.0
+    @editable       EliminationSkip<public> : float = 4.0
+    @editable       TeamWipeSkip<public> : float = 10.0
+    @editable       MinimumTeammatesAliveRequired<public> : int = 1
+    @editable       MaximumRebootBank<public> : int = 1
+    @editable       RebootRiftLifetime<public> : float = 10.0
+    @editable       RebootStates<public> : []rr_reboot_state = array:
         rr_reboot_state:
             TimeToReboot := 3.0
             Duration := 15.0
@@ -77,6 +60,7 @@ rr_reboot_manager := class:
     HoldToRebootHUDAnim : hud_message_device
     RebootMessageFeed : elimination_feed_device
     SkyDiveTeleporters : []teleporter_device
+    RiftAsset : creative_prop_asset
     RiftSFX : audio_player_device
 
     var <private>CurrentRebootIndex<private> : int = 0
@@ -85,12 +69,14 @@ rr_reboot_manager := class:
     var <private>LastPositionBeforeEliminated<private> : [agent]transform = map{}
     var <private>RebootsDisabled<private> : logic = false
     var <private>TeleporterIndex<private> : int = 0
+    var <private>DefaultRebootLocation<private> : vector3 = vector3{}
 
     RebootsDisabledEvent : event() = event(){}
     RoundEndEvent : event() = event(){}
     TeamWipeEvent : event(int) = event(int){}
 
-    EnableReboots<public>():void = 
+    EnableReboots<public>(InDefaultRebootLocation : vector3):void = 
+        set DefaultRebootLocation = InDefaultRebootLocation
         set RebootsDisabled = false
         set CurrentRebootIndex = 0
         set CurrentRebootState = option{RebootParameters.RebootStates[CurrentRebootIndex]}
@@ -112,6 +98,7 @@ rr_reboot_manager := class:
         RebootsDisabledEvent.Signal()
         set RebootsDisabled = true
         set CurrentRebootState = false
+        set DefaultRebootLocation = vector3{}
         HoldToRebootTrigger.UnregisterAll()
         StatusTimerCenterHUD.Stop()
         StatusTimerCornerHUD.Stop()
@@ -126,26 +113,26 @@ rr_reboot_manager := class:
         for(RebootState : RebootParameters.RebootStates):
             set CurrentRebootState = option{RebootState}
             if(RebootState.ShowTimer?):
-                spawn{StartRebootStatusTimer(Int[RebootState.Duration] or 0, Participants)}
+                spawn{StartRebootStatusTimer(RebootState.Duration, Participants)}
             AwaitTimer(RebootState.Duration)
         DisableReboots()
 
     # Reboot Status Timer
-    StartRebootStatusTimer(Duration : int, Participants : []agent)<suspends>:void =
+    StartRebootStatusTimer(Duration : float, Participants : []agent)<suspends>:void =
         race:
             RoundEndEvent.Await()
             block:
                 for(Participant : Participants):
                     StatusTimerCenterHUD.Start(Participant, Duration)
-                if(Duration > 3):
+                if(Duration > 3.0):
                     AwaitTimer(3.0)
                     StatusTimerCenterHUD.Stop()
                     for(Participant : Participants):
-                        StatusTimerCornerHUD.Start(Participant, Duration -3)
+                        StatusTimerCornerHUD.Start(Participant, Duration -3.0)
                     AwaitTimer(1.0 * Duration - 6.0)
                     StatusTimerCornerHUD.Stop()
                     for(Participant : Participants):
-                        StatusTimerCenterHUD.Start(Participant, 3)
+                        StatusTimerCenterHUD.Start(Participant, 3.0)
 
     AwaitEliminated<private>(InAgent : agent)<suspends>:void =
         race:
@@ -220,12 +207,12 @@ rr_reboot_manager := class:
             FortCharacter := InAgent.GetFortCharacter[]
             Result? and FortCharacter.IsDownButNotOut[]
         then:
-            RepeatAttemptElimination(FortCharacter)
+            RepeatAttemptEliminate(FortCharacter)
 
     IsRebootSafe<private>(InAgent : agent)<transacts><decides>:void =
         TeamCollection := GetMainDevicePlayspace().GetTeamCollection()
         TeamMatesAlive := for:
-            TeamMate : TeamCollection._GetUpTeammates(InAgent)
+            TeamMate : TeamCollection._GetUpTeammates[InAgent]
             RebootableParticipantStateMap[TeamMate] # ! This verifies that the teammate was playing this round
         do:
             TeamMate
@@ -251,18 +238,15 @@ rr_reboot_manager := class:
             RebootTimerDevice.SetActiveDuration(TimeToReboot, InAgent)
             RebootTimerDevice.Start(InAgent)
             RebootTimerDevice.SetActiveDuration(TimeToReboot, InAgent)
-            Print("Awaiting Timer and Time Skips")
             branch:
                 AwaitTeamTimeSkips(InAgent)
-            # RebootTimerDevice.SuccessEvent.AwaitPayloadEqual(option{InAgent})
-            loop:
-                MaybeSuccessAgent := RebootTimerDevice.SuccessEvent.Await()
-                if(MaybeSuccessAgent? = InAgent):
-                    break
-            Print("Timer Finished")
+            RebootTimerDevice.SuccessEvent.AwaitPayloadEqual(option{InAgent})
+            # loop:
+            #     MaybeSuccessAgent := RebootTimerDevice.SuccessEvent.Await()
+            #     if(MaybeSuccessAgent? = InAgent):
+            #         break
             true
         else:
-            Print("Failed to Get TimeToReboot")
             false
 
     AwaitTeamTimeSkips(InAgent : agent)<suspends>:void =
@@ -313,8 +297,7 @@ rr_reboot_manager := class:
             TeamWipeHUD.Show(Eliminator)
             TeamWipeSFX.Play(Eliminator)
             AwardXP(Eliminator, rr_award.TeamWipe)
-            UpTeammates := TeamCollection._GetUpTeammates(Eliminator)
-            for(UpTeammate : UpTeammates):
+            for(UpTeammate : TeamCollection._GetUpTeammates[Eliminator]):
                 TeamWipeHUD.Show(UpTeammate)
                 TeamWipeSFX.Play(UpTeammate)
                 AwardXP(UpTeammate, rr_award.TeamWipe)
@@ -325,11 +308,10 @@ rr_reboot_manager := class:
 
     SkyReboot<private>(InAgent : agent, InTeleporterDevice : teleporter_device)<suspends>:void =
         TeamCollection := GetMainDevicePlayspace().GetTeamCollection()
-        UpTeamMates := TeamCollection._GetUpTeammates(InAgent)
-
         RebootTransform := if:
         # Spawn Above Teammate
-            RandomUpTeamMate := UpTeamMates[GetRandomInt(0, UpTeamMates.Length - 1)]
+            UpTeammates := TeamCollection._GetUpTeammates[InAgent]
+            RandomUpTeamMate := UpTeammates[GetRandomInt(0, UpTeammates.Length - 1)]
             TeammateFortChar := RandomUpTeamMate.GetFortCharacter[]
         then:
             transform:
@@ -343,14 +325,12 @@ rr_reboot_manager := class:
                 Rotation := LastTransform.Rotation
                 Scale := v3(1)
         # Spawn Center to POI
-        else if(CurrentPOI := GetCurrentPOI[]):
+        else:
             transform:
-                Translation := CurrentPOI.GetCenter().Translation.SetZ(RebootParameters.SkyZ)
+                Translation := DefaultRebootLocation.SetZ(RebootParameters.SkyZ)
                 Rotation := IdentityRotation()
                 Scale := v3(1)
-        else:
-            return
-        
+
         spawn{RebootRift(RebootTransform, InTeleporterDevice)}
         RiftSFX.Play(InAgent)
         RespawnTask := InAgent.RespawnAt(RebootTransform)
@@ -369,7 +349,7 @@ rr_reboot_manager := class:
 
     RebootRift<private>(InTransform : transform, InTeleporterDevice : teleporter_device)<suspends>:void =
         if { InTeleporterDevice.TeleportTo[InTransform] }
-        SpawnResult := SpawnProp(RebootParameters.RebootRift, InTransform + v3(0,0,128))
+        SpawnResult := SpawnProp(RiftAsset, InTransform + v3(0,0,128))
         if(SpawnedProp := SpawnResult(0)?):
             Sleep(RebootParameters.RebootRiftLifetime)
             SpawnedProp.Dispose()

@@ -2,12 +2,13 @@ using { /UnrealEngine.com/Temporary/SpatialMath }
 using { /Fortnite.com/Devices }
 using { /Verse.org/Colors }
 
-rr_config_duos := class(rr_abstract_config):
+using { src }
 
+rr_config_duos<public> := class(rr_abstract_config):
     AutoStartMinimum<override> : int = 4
-
     TeamSize<override> : int = 2
     MinimumSelectableTeams<override> : int = 2
+    SelectableTeamCapacity<override> : int = 2
     NeutralTeamIndex<override> : int = 0
     SelectableTeamParameters<override> : []rr_selectable_team_parameter = array:
         rr_selectable_team_parameter:
@@ -22,27 +23,22 @@ rr_config_duos := class(rr_abstract_config):
         rr_selectable_team_parameter:
             Index := 4
             Color := NamedColors.Yellow 
-
     SupplyDropTimesAndQuantities<override> : []tuple(float, int) = array:
         (10.0, 2)
         (45.0, 3)
         (60.0, 2)
-
     InitialStormPhaseRadiusCM<override> : float = 8500.0
-
-    RebootParameters<override> : rr_reboot_parameters = rr_reboot_parameters:
+    Reboot<override> : rr_reboot_parameters = rr_reboot_parameters:
         SkyZ := 384.0 * 40
         KnockSkip := 2.0
         EliminationSkip := 4.0
         TeamWipeSkip := 10.0
         MinimumTeammatesAliveRequired := 1
         MaximumRebootBank := 1
-        RebootRift := DefaultCreativePropAsset          # ! This also needs to be editable bc yeah
-        RebootMessageFeed := elimination_feed_device{} # ! This needs to be an editable bc...yeah
         RebootRiftLifetime := 10.0
         RebootStates := array:
             rr_reboot_state:
-                TimeToReboot := 0.0
+                TimeToReboot := 1.0
                 Duration := 15.0
             rr_reboot_state:
                 TimeToReboot := 3.0
@@ -54,9 +50,7 @@ rr_config_duos := class(rr_abstract_config):
                 TimeToReboot := 7.0
                 Duration := 60.0
                 ShowTimer := true
-
-    ScoreHUDParameters<override> : rr_score_hud_parameters = rr_score_hud_parameters:
-
+    ScoreHUD<override> : rr_score_hud_parameters = rr_score_hud_parameters:
         HorizontalPadding<override> := 10.0
         CrownTeamBlockPadding<override> := 5.0
         TextureBlockXYSize<override> := 75.0
@@ -81,8 +75,41 @@ rr_config_duos := class(rr_abstract_config):
         PositionOffset<override> := vector2:
             X := 35.0
             Y := 60.0
-    
         TeamBlockTexture<override> := RR_UI.TeamScoring.T_TeamBlock
         TeamBlockYouTexture<override> := RR_UI.TeamScoring.T_TeamBlockYou
         YouUnderTexture<override> := RR_UI.TeamScoring.T_YouUnder
         CrownTexture<override> := RR_UI.TeamScoring.T_Crown
+    TeamTags<override> : []selectable_teams_tag = array:
+        team_one_tag{}
+        team_two_tag{}
+        team_three_tag{}
+        team_four_tag{}
+    POITags<override> : []rr_poi_tags = array:
+        yacht_poi_tag{}
+        motel_poi_tag{}
+        pleasant_poi_tag{}
+        catty_poi_tag{}
+        retail_poi_tag{}
+        sands_poi_tag{}
+        frosty_poi_tag{}
+        factories_poi_tag{}
+        crash_poi_tag{}
+        weeping_poi_tag{}
+    LoadoutTags<override> : []rr_loadout_selector_tags = array:
+        loadout_1_tag{}
+        loadout_2_tag{}
+        loadout_3_tag{}
+        loadout_4_tag{}
+        loadout_5_tag{}
+        loadout_6_tag{}
+    PairingTags<override> : []rr_poi_pairing_tags = array:
+        pairing_a_tag{}
+        pairing_b_tag{}
+    TeamSelectTimerDurationMap<override>:[int]float = map:
+        3 => 8.0
+        4 => 8.0
+        5 => 10.0
+        6 => 10.0
+        7 => 12.0
+        8 => 12.0
+

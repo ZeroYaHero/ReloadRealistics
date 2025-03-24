@@ -7,37 +7,35 @@ custom_hud_timer := class:
 
     # ! This custom timer only displays in seconds
     HUDMessageDevice : hud_message_device
-    Duration : int = 1
+    var Duration : float = 1.0
     SuccessEvent : event(?agent) = event(?agent){}
     StopEvent<internal> : event(?agent) = event(?agent){}
 
     Start():void =
         Start(Duration)
 
-    Start(InDuration : int):void =
-        for(Participant : HUDMessageDevice.GetPlayspace().GetParticipants()):
-            spawn{TimerLoop(Participant, InDuration)}
-    
-    Start(InAgent : agent, InDuration : int):void =
-        spawn{TimerLoop(InAgent, InDuration)}
+    SetDuration(InDuration : float):void =
+        set Duration = InDuration
 
-    TimerLoop(InAgent : agent, InDuration : int)<suspends>:void =
-        var TimeLeft : int = InDuration
-        race:
-            loop:
-                MaybeAgent := StopEvent.Await()
-                if(not MaybeAgent? or MaybeAgent? = InAgent):
-                    break
-            loop:
-                if(TimeLeft <= 0):
-                    HUDMessageDevice.Show(InAgent, IntToMessage(0), ?DisplayTime:=1.0)
-                    AwaitTimer(1.0)
-                    SuccessEvent.Signal(option{InAgent})
-                    break
-                HUDMessageDevice.Show(InAgent, IntToMessage(TimeLeft), ?DisplayTime:=1.0)
-                AwaitTimer(1.0)
-                set TimeLeft -= 1
-        HUDMessageDevice.Hide(InAgent)
+    Start(InDuration : float):void =
+        for(Participant : HUDMessageDevice.GetPlayspace().GetParticipants()):
+            spawn{_TimerLoop(Participant, InDuration)}
+    
+    Start(InAgent : agent, InDuration : float):void =
+        spawn{_TimerLoop(InAgent, InDuration)}
+
+    StartAndAwaitSuccess()<suspends>:void =
+        sync:
+            SuccessEvent.Await()
+            block:
+                Sleep(-1.0)
+                Start(Duration)
+
+    AwaitSuccess()<suspends>:void =
+        SuccessEvent.Await() 
+
+    Reset():void =
+        Stop()
 
     Stop():void =
         StopEvent.Signal(false)
@@ -45,4 +43,21 @@ custom_hud_timer := class:
     Stop(InAgent : agent):void =
         StopEvent.Signal(option{InAgent})
 
-    IntToMessage<localizes>(Val : int):message = "{Val}"
+    _TimerLoop<private>(InAgent : agent, InDuration : float)<suspends>:void =
+        var TimeLeft : float = InDuration
+        race:
+            loop:
+                MaybeAgent := StopEvent.Await()
+                if(not MaybeAgent? or MaybeAgent? = InAgent):
+                    break
+            loop:
+                if(TimeLeft <= 0.0):
+                    HUDMessageDevice.Show(InAgent, IntToMessage(0), ?DisplayTime:=1.0)
+                    AwaitTimer(1.0)
+                    SuccessEvent.Signal(option{InAgent})
+                    break
+                if(Trunc := Int[TimeLeft]):
+                    HUDMessageDevice.Show(InAgent, IntToMessage(Trunc), ?DisplayTime:=1.0)
+                AwaitTimer(1.0)
+                set TimeLeft -= 1.0
+        HUDMessageDevice.Hide(InAgent)
