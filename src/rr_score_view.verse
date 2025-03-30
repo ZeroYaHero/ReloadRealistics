@@ -1,86 +1,96 @@
 using { /UnrealEngine.com/Temporary/SpatialMath }
 using { /UnrealEngine.com/Temporary/UI }
+using { /UnrealEngine.com/Temporary }
 using { /Verse.org/Simulation/Tags }
 using { /Verse.org/Simulation }
 using { /Fortnite.com/Devices }
+using { /Verse.org/Assets }
 using { /Verse.org/Colors }
 using { /Fortnite.com/UI }
 
 using { FN_Gameplay }
 
-foo(t:type) := interface{}
+rr_score_hud_parameters<public> := class<concrete>:
 
-bar := class(foo(int), foo(float)):
-
-
-
-hud_verse_tag := class(tag){}
-    win_round_hud_tag := class(hud_verse_tag){}
-    lose_round_hud_tag := class(hud_verse_tag){}
-    generic_popup_dialog_tag := class(hud_verse_tag){}
-    generic_hud_message_tag := class(hud_verse_tag){}
-    watermark_hud_tag := class(hud_verse_tag){}
-    # TODO!: Make the generic timers and stuff
-
-RR_UI := module:
-    TeamScoring<public> := module{}
-
-rr_hud_parameters := class<concrete>:
-
-    @editable   HorizontalPadding : float = 10.0
-    @editable   CrownTeamBlockPadding : float = 5.0
-    @editable   TextureBlockXYSize : float = 75.0
-    @editable   TextShadowOpacity : float = 0.3
-    @editable   TextColor : color = color:
+    @editable   HorizontalPadding<public> : float = 10.0
+    @editable   CrownTeamBlockPadding<public> : float = 5.0
+    @editable   TextureBlockXYSize<public> : float = 75.0
+    @editable   TextShadowOpacity<public> : float = 0.3
+    @editable   TextColor<public> : color = color:
         R := 1.0
         G := 1.0
         B := 1.0
-    @editable   TextShadowColor : color = color:
+    @editable   TextShadowColor<public> : color = color:
         R := 0.0
         G := 0.0
         B := 0.0
-    @editable   TextShadowOffset : vector2 = vector2:
+    @editable   TextShadowOffset<public> : vector2 = vector2:
         X := 2.0
         Y := 1.5
-    @editable   Anchor : vector2 = vector2:
+    @editable   Anchor<public> : vector2 = vector2:
         X := 1.0
         Y := 0.0
-    @editable   Alignment : vector2 = vector2:
+    @editable   Alignment<public> : vector2 = vector2:
         X := 1.0
         Y := 0.0
-    @editable   PositionOffset : vector2 = vector2:
+    @editable   PositionOffset<public> : vector2 = vector2:
         X := 35.0
         Y := 60.0
 
-# TODO!: Implement
-rr_hud_devices := struct:
+    @editable   TeamBlockTexture<public> : texture = RR_UI.TeamScoring.T_TeamBlock
+    @editable   TeamBlockYouTexture<public> : texture = RR_UI.TeamScoring.T_TeamBlockYou
+    @editable   YouUnderTexture<public> : texture = RR_UI.TeamScoring.T_YouUnder
+    @editable   CrownTexture<public> : texture = RR_UI.TeamScoring.T_Crown
 
-    WinRoundHUD : hud_message_device
-    LoseRoundHUD : hud_message_device
-    Generic2Dialog : popup_dialog_device
-    GenericHUD : hud_message_device
+rr_score_view := class(rr_state_handler_interface):
 
-rr_hud_manager := class:
-
-    Parameters : rr_hud_parameters
-    WinRoundHUD : hud_message_device
-    LoseRoundHUD : hud_message_device
-    WatermarkHUD : hud_message_device
-    TeamIndexTintMap : [int]color
+    Parameters : rr_score_hud_parameters
+    ScoreModel : rr_score_model
+    TeamSelector : rr_team_selector
+    TeamIndexColorMap : [int]color
     var AgentHUDMap : [agent]rr_score_hud = map{}
 
-    Refresh(TeamsData : []rr_team_data, TeamIndexTeamMembersMap : [int][]agent, TeamScorePairings : []tuple(int, int)):void =
-        WatermarkHUD.Show()
-        set AgentHUDMap = Dict of for:
-            TeamIndex -> TeamMembers : TeamIndexTeamMembersMap
+    EnterCombatRound<override>()<suspends>:void =
+        Refresh()
+
+    ExitCombatRound<override>()<suspends>:void =
+        Refresh()
+
+    EnterTeamSelect<override>()<suspends>:void =
+        loop:
+            TeamSelector.TeamSelectedEvent.Await()
+            Refresh()
+
+    Refresh():void =
+        SortedTeamScorePairings := GetSortedTeamScorePairings()
+        TeamIndexTeamMembersMap := TeamSelector.GetSelectableTeamMembersMap()
+
+        var SeenAgents : []agent = array{}
+        NewAgentHUDMap := Dict of for:
+            TeamIndex -> TeamMembers : TeamSelector.GetSelectableTeamMembersMap()
             TeamMember : TeamMembers
         do:
+            set SeenAgents += array{TeamMember}
             if(HUD := AgentHUDMap[TeamMember]):
-                (TeamMember, HUD.Refresh(TeamScorePairings))
+                (TeamMember, HUD.Refresh(TeamIndex, SortedTeamScorePairings))
             else:
-                (TeamMember, BuildHUD(TeamMember <# Current agent #>, TeamIndex <# Team index belonging #>, TeamsData <# Max potential teams #>, TeamScorePairings <# Teams currently active #>))
+                (TeamMember, BuildHUD(TeamMember <# Current agent #>, TeamIndex <# Team index belonging #>, TeamIndexTeamMembersMap, SortedTeamScorePairings <# Teams currently active #>))
 
-    BuildHUD(InAgent : agent, InTeamIndex : int, TeamsData : []rr_team_data, TeamScorePairings : []tuple(int, int)):rr_score_hud =
+        for:
+            Agent -> HUD : AgentHUDMap
+            not SeenAgents.Find[Agent]
+            PlayerUI := GetPlayerUI[player[Agent]]
+        do:
+            PlayerUI.RemoveWidget(HUD.OverallCanvas)
+
+        set AgentHUDMap = NewAgentHUDMap
+
+    GetSortedTeamScorePairings():[]tuple(int, int) =
+        ScorePairings := for(TeamIndex -> TeamMembers : TeamSelector.GetSelectableTeamMembersMap()):
+            (TeamIndex, ScoreModel.GetMaxScoreOf(TeamMembers))
+        SortBy(ScorePairings, TupleSecondGreaterComp)
+
+    BuildHUD(InAgent : agent, InTeamIndex : int, TeamIndexTeamMembersMap : [int][]agent, TeamScorePairings : []tuple(int, int)):rr_score_hud =
         TeamIndexScoreMap := Dict of TeamScorePairings
 
         TextureBlockSize := vector2:
@@ -91,24 +101,24 @@ rr_hud_manager := class:
         HorizontalTeamStackBox := stack_box:
             Orientation := orientation.Horizontal
             Slots := for:
-                Team : TeamsData
-                TeamTint := TeamIndexTintMap[Team.Parameter.Index]
+                TeamIndex -> TeamColor : TeamIndexColorMap
+                TeamTint := TeamIndexColorMap[TeamIndex]
             do:
                 set TeamBlocksCount += 1
                 
                 CrownTextureBlock := texture_block:
-                    DefaultImage := RR_UI.TeamScoring.T_Crown
+                    DefaultImage := Parameters.CrownTexture
                     DefaultTint := TeamTint
                     DefaultDesiredSize := TextureBlockSize
                 if(not TeamBlocksCount = 1):
                     CrownTextureBlock.SetVisibility(widget_visibility.Hidden)
 
                 YouUnderTextureBlock := texture_block:
-                    DefaultImage := RR_UI.TeamScoring.T_YouUnder
+                    DefaultImage := Parameters.YouUnderTexture
                     DefaultTint := TeamTint
                     DefaultDesiredSize := TextureBlockSize
 
-                YouUnderTextureBlock.SetVisibility(Team.Parameter.Index = InTeamIndex and widget_visibility.Visible or widget_visibility.Hidden)
+                YouUnderTextureBlock.SetVisibility(TeamIndex = InTeamIndex and widget_visibility.Visible or widget_visibility.Hidden)
                 TeamScoreStackBox := stack_box:
                     Orientation := orientation.Vertical
                     Slots := array:
@@ -121,12 +131,12 @@ rr_hud_manager := class:
                                 Slots := array:
                                     overlay_slot:
                                         Widget := texture_block:
-                                            DefaultImage := Team.Parameter.Index = InTeamIndex and RR_UI.TeamScoring.T_TeamBlockYou or RR_UI.TeamScoring.T_TeamBlock
+                                            DefaultImage := TeamIndex = InTeamIndex and Parameters.TeamBlockYouTexture or Parameters.TeamBlockTexture
                                             DefaultTint := TeamTint
                                             DefaultDesiredSize := TextureBlockSize
                                     overlay_slot:
                                         Widget := text_block:
-                                            DefaultText := ToMessage(TeamIndexScoreMap[Team.Parameter.Index] or 0)
+                                            DefaultText := ToMessage(TeamIndexScoreMap[TeamIndex] or 0)
                                             DefaultTextColor := Parameters.TextColor
                                             DefaultShadowColor := Parameters.TextShadowColor
                                             DefaultShadowOffset := option{Parameters.TextShadowOffset}
@@ -136,12 +146,18 @@ rr_hud_manager := class:
                         stack_box_slot:
                             Widget := YouUnderTextureBlock
 
-                TeamScoreStackBox.SetVisibility(TeamIndexScoreMap[Team.Parameter.Index] and widget_visibility.Visible or widget_visibility.Collapsed)
+                WidgetVisibility := if(TeamIndexTeamMembersMap[TeamIndex][0]):
+                    Print("There is a team member on Team Index {TeamIndex}, so it will be visible on HUD")
+                    widget_visibility.Visible
+                else:
+                    Print("There is no team members on Team Index {TeamIndex}, so it will not be visible on HUD")
+                    widget_visibility.Collapsed
+                TeamScoreStackBox.SetVisibility(WidgetVisibility)
 
                 stack_box_slot:
                     HorizontalAlignment := horizontal_alignment.Right
                     Padding := margin:
-                        Right := TeamBlocksCount <> TeamIndexTintMap.Length and Parameters.HorizontalPadding or 0.0
+                        Right := TeamBlocksCount <> TeamIndexColorMap.Length and Parameters.HorizontalPadding or 0.0
                     Widget := TeamScoreStackBox
 
         OverallCanvas := canvas:
@@ -164,21 +180,29 @@ rr_hud_manager := class:
             Print("Failed to add Widget")
     
         HUD := rr_score_hud:
-            BelongingTeamIndex := InTeamIndex
-            TeamIndexTintMap := TeamIndexTintMap
+            TeamIndexColorMap := TeamIndexColorMap
             HorizontalTeamStackBox := HorizontalTeamStackBox
             OverallCanvas := OverallCanvas
 
         HUD
 
+    GetStateListenersMap<override>()<transacts>:[comparable][]fn_gameplay_state_listenable =
+        map:
+            rr_state_enum.CombatRound => array:
+                fn_gameplay_state_listener:
+                    EnterCallback := option{EnterCombatRound}
+                    ExitCallback := option{ExitCombatRound}
+            rr_state_enum.TeamSelect => array:
+                fn_gameplay_state_listener:
+                    EnterCallback := option{EnterTeamSelect}
+                    
 rr_score_hud := class:
 
-    BelongingTeamIndex : int
-    TeamIndexTintMap : [int]color
+    TeamIndexColorMap : [int]color
     HorizontalTeamStackBox : stack_box
     OverallCanvas : canvas
 
-    Refresh(SortedTeamScores : []tuple(int, int)):rr_score_hud =
+    Refresh(BelongingTeamIndex : int, SortedTeamScores : []tuple(int, int)):rr_score_hud =
         for:
             Position -> Widget : HorizontalTeamStackBox.Slots 
             TeamStackBox := stack_box[HorizontalTeamStackBox.Slots[Position].Widget]
@@ -190,9 +214,9 @@ rr_score_hud := class:
         do:
             if:
                 TeamIndexScore := SortedTeamScores[Position]
-                TeamTint := TeamIndexTintMap[TeamIndexScore(0)]
+                TeamTint := TeamIndexColorMap[TeamIndexScore(0)]
             then:
-                Print("Updating {Position} to be Team {TeamIndexScore(0)} with Score {TeamIndexScore(1)}")
+                # Print("Updating {Position} to be visible with Team {TeamIndexScore(0)} with Score {TeamIndexScore(1)}")
                 TeamStackBox.SetVisibility(widget_visibility.Visible)
                 TeamBoxTextBlock.SetText(ToMessage(TeamIndexScore(1)))
                 if(TeamIndexScore(0) = BelongingTeamIndex):
@@ -205,5 +229,6 @@ rr_score_hud := class:
                 TeamBoxTextureBlock.SetTint(TeamTint)
                 YouFlagTextureBlock.SetTint(TeamTint)
             else:
+                # Print("Updating {Position} to be collapsed")
                 TeamStackBox.SetVisibility(widget_visibility.Collapsed)
         Self

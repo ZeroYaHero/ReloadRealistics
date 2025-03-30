@@ -3,20 +3,7 @@ using { /Verse.org/Simulation }
 using { /Fortnite.com/Devices }
 using { FN_Gameplay }
 
-weapon_select_tag := class(tag){}
-    weapon_select_device := class(weapon_select_tag){}
-    loadout_granter_1 := class(weapon_select_tag){}
-    loadout_granter_2 := class(weapon_select_tag){}
-    loadout_granter_3 := class(weapon_select_tag){}
-    loadout_granter_4 := class(weapon_select_tag){}
-    loadout_granter_5 := class(weapon_select_tag){}
-    loadout_granter_6 := class(weapon_select_tag){}
-    always_granter := class(weapon_select_tag){}
-    random_granter := class(weapon_select_tag){}
-    item_remover := class(weapon_select_tag){}
-    keep_loadout_select_device := class(weapon_select_tag){}
-
-rr_item_manager := class:
+rr_loadout_selector := class:
 
     WeaponSelectDialog : popup_dialog_device
     KeepSelectDialog : popup_dialog_device
@@ -24,6 +11,13 @@ rr_item_manager := class:
     LoadoutGranters : []item_granter_device
     RandomGranters : []item_granter_device
     ItemRemover : item_remover_device
+    LoadoutSubmissionTypes : []rr_analytic = array:
+        rr_analytic.Loadout1
+        rr_analytic.Loadout2
+        rr_analytic.Loadout3
+        rr_analytic.Loadout4
+        rr_analytic.Loadout5
+        rr_analytic.Loadout6
     var LastSelectedMap : [agent]int = map{}
     var KeepSelection : [agent]logic = map{}
     var CurrentlyBeingGrantedItems : []agent = array{}
@@ -53,39 +47,33 @@ rr_item_manager := class:
                 else:
                     PrintAndErr("Unreachable")
 
-    ShowSelectionUITo(InAgents : []agent):void =
-        for:
-            InAgent : InAgents
-            not KeepSelection[InAgent] or not KeepSelection[InAgent]?
-        do:
-            WeaponSelectDialog.Show(InAgent)
+    ShowUI(InAgent : agent):void =
+        WeaponSelectDialog.Show(InAgent)
 
-    HideUIFrom(InAgent : agent):void =
+    ShowUI():void =
+        WeaponSelectDialog.Show()
+
+    HideUI(InAgent : agent):void =
         WeaponSelectDialog.Hide(InAgent)
         KeepSelectDialog.Hide(InAgent)
 
-    HideUIFromAll():void =
+    HideUI():void =
         WeaponSelectDialog.Hide()
         KeepSelectDialog.Hide()
-
-    ClearLoadouts(InAgents : []agent):void =
-        for(InAgent : InAgents):
-            ClearLoadout(InAgent)
 
     ClearLoadout(InAgent : agent):void =
         ItemRemover.Remove(InAgent)
     
     GrantLoadout(InAgent : agent, Index : int, Manual : logic)<suspends>:void =
         set CurrentlyBeingGrantedItems += array{InAgent}
-        Print("Granting to Agent")
         if { set LastSelectedMap[InAgent] = Index }
         if(LoadoutGranter := LoadoutGranters[Index]):
             ClearLoadout(InAgent)
-            Sleep(0.0)
+            AwaitServerTick()
             AlwaysGranter.GrantItem(InAgent)
-            Sleep(0.0)
+            AwaitServerTick()
             LoadoutGranter.GrantItem(InAgent)
-            Sleep(0.0)
+            AwaitServerTick()
             if(Index <> 4):
                 for(RandomGranter : RandomGranters):
                     RandomGranter.CycleToRandomItem(InAgent)
@@ -93,6 +81,8 @@ rr_item_manager := class:
                 KeepSelectDialog.Show(InAgent)
         else:
             PrintAndErr("Loadout Selected Does Not Exist!")
+        if(LoadoutSubmissionType := LoadoutSubmissionTypes[Index]):
+            SubmitData(InAgent, LoadoutSubmissionType)
         set CurrentlyBeingGrantedItems = CurrentlyBeingGrantedItems.RemoveAllElements(InAgent)
         
     # This should use the persistent map if set
@@ -101,3 +91,4 @@ rr_item_manager := class:
             spawn{GrantLoadout(InAgent, LastSelected, false)}
         else:
             spawn{GrantLoadout(InAgent, 0, false)}
+            SubmitData(InAgent, rr_analytic.DefaultLoadout)
