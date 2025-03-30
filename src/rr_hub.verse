@@ -15,7 +15,6 @@ rr_hub_manager := class(rr_state_handler_interface):
     AutoStartVoteUI : popup_dialog_device
     AutoStartFailedHUD : hud_message_device
     RebootVanTimer : timer_device
-    HUBMutator : mutator_zone_device
     # Rematch / Requeue
     WinnerRematchProp : creative_prop
     # Teleporters
@@ -56,9 +55,6 @@ rr_hub_manager := class(rr_state_handler_interface):
                     else if(InitializedParticipantsCount >= AutoStartMinimum):
                         break
         RebootVanTimer.Start()
-    
-    EnterTeamSelect<override>()<suspends>:void =
-        HUBMutator.Jiggle()
 
     BoyerMooreAutoStartVote<private>()<suspends>:logic =
         defer:
@@ -103,13 +99,17 @@ rr_hub_manager := class(rr_state_handler_interface):
 
     EnterRematchRequeue<override>()<suspends>:void =
         ParticipantManager.GetParticipants().TeleportToOrRespawnAt(SpawnTeleporters)
-        WinnerRematchPropTransform := WinnerRematchProp.GetTransform()
-        if { WinnerRematchProp.TeleportTo[WinnerRematchPropTransform + v3(0, 0, 960)]}
+        TeleportRematchProp()
 
     EnterOpponentsLeft<override>()<suspends>:void =
         ParticipantManager.GetParticipants().TeleportToOrRespawnAt(SpawnTeleporters)
         for(Participant : ParticipantManager.GetParticipants()):
             AwardXP(Participant, rr_award.PlayedGame)
+        TeleportRematchProp()
+
+    TeleportRematchProp():void = 
+        WinnerRematchPropTransform := WinnerRematchProp.GetTransform()
+        if { WinnerRematchProp.TeleportTo[WinnerRematchPropTransform + v3(0, 0, 960)]}
 
     GetStateListenersMap<override>()<transacts>:[comparable][]fn_gameplay_state_listenable =
         map:

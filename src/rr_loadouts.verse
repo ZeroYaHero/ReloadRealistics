@@ -69,11 +69,11 @@ rr_loadout_selector := class:
         if { set LastSelectedMap[InAgent] = Index }
         if(LoadoutGranter := LoadoutGranters[Index]):
             ClearLoadout(InAgent)
-            Sleep(0.0)
+            AwaitServerTick()
             AlwaysGranter.GrantItem(InAgent)
-            Sleep(0.0)
+            AwaitServerTick()
             LoadoutGranter.GrantItem(InAgent)
-            Sleep(0.0)
+            AwaitServerTick()
             if(Index <> 4):
                 for(RandomGranter : RandomGranters):
                     RandomGranter.CycleToRandomItem(InAgent)

@@ -20,3 +20,6 @@ rr_abstract_config<public> := class<abstract>:
     TeamSelectTimerDurationMap<public>:[int]float
 
     POITagNamePairs<public>:[]tuple(rr_poi_tags, string) = array{}
+
+    StormRanges<public>:[]tuple(float, float)
+    StormBeaconTags<public>:[]round_storm_device_tag

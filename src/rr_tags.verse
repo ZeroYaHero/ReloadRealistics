@@ -1,15 +1,11 @@
 using { /Verse.org/Simulation/Tags }
 
-# combat_manager_tag := class(tag){}
-#     barrier_timer_tag := class(combat_manager_tag){}
-#     basic_storm_tag := class(combat_manager_tag){}
-#     supply_drops_tag := class(combat_manager_tag){}
-#     win_round_tag := class(combat_manager_tag){}
-#     lose_round_tag := class(combat_manager_tag){}
-
-rr_round_tags := class(tag){}
+rr_round_tags<public> := class(tag){}
     round_barrier_timer_hud_tag := class(rr_round_tags){}
-    round_storm_device_tag := class(rr_round_tags){}
+    round_storm_device_tag<public> := class(rr_round_tags){}
+        round_storm_1_device_tag<public> := class(round_storm_device_tag){}
+        round_storm_2_device_tag<public> := class(round_storm_device_tag){}
+        round_storm_3_device_tag<public> := class(round_storm_device_tag){}
     round_supply_spawner_tag := class(rr_round_tags){}
 
 # Loadout Selection
@@ -25,6 +21,9 @@ rr_loadout_selector_tags<public> := class(tag){}
     random_granter_tag := class(rr_loadout_selector_tags){}
     item_remover_tag := class(rr_loadout_selector_tags){}
     keep_loadout_dialog_tag := class(rr_loadout_selector_tags){}
+
+rr_participant_manager_tags := class(tag){}
+    middle_round_hud_tag := class(rr_participant_manager_tags){}
 
 rr_score_tags := class(tag){}
     round_win_reference_tag := class(rr_score_tags){}
@@ -66,6 +65,7 @@ rr_reboot_tags := class(tag){}
     reboot_granter_tag := class(rr_reboot_tags){}
     reboot_sky_tp_tag := class(rr_reboot_tags){}
     reboot_disabled_corner_tag := class(rr_reboot_tags){}
+    reboot_enabled_hud_tag := class(rr_reboot_tags){}
     reboot_input_tag := class(rr_reboot_tags){}
     reboot_input_hud_tag := class(rr_reboot_tags){}
     reboot_input_anim_tag := class(rr_reboot_tags){}

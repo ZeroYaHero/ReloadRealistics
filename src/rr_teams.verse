@@ -29,31 +29,55 @@ rr_selectable_team := class:
     PlayerReferenceDevices<public> : []player_reference_device
     VolumeTeleporters<public> : []teleporter_device
     SFX<public> : audio_player_device
+    var PlayerReferenceIndexAgentMap<public> : [int]?agent = map{}
 
     Show():void =
-        # TODO: teleport logic
         if { DisplaySelector.TeleportTo[DisplaySelector.GetTransform().TransZ(384.0)] }
 
         SelectVolume.Enable()
         DisplaySelector.Enable()
+
         for:
             PlayerReferenceDevice : PlayerReferenceDevices
         do:
             PlayerReferenceDevice.Enable()
 
     Hide():void =
-        # TODO: teleport logic
         if { DisplaySelector.TeleportTo[DisplaySelector.GetTransform().TransZ(-384.0)] }
 
         SelectVolume.Disable()
         DisplaySelector.Disable()
+
+        set PlayerReferenceIndexAgentMap = map{}
         for:
             PlayerReferenceDevice : PlayerReferenceDevices
         do:
             PlayerReferenceDevice.Clear()
             PlayerReferenceDevice.Disable()
 
-rr_team_selector := class(rr_state_handler_interface):
+    RegisterUnusedReference(InAgent : agent):void =
+        loop:
+            for:
+                DeviceIndex -> PlayerReferenceDevice : PlayerReferenceDevices
+                not PlayerReferenceIndexAgentMap[DeviceIndex]?
+                set PlayerReferenceIndexAgentMap[DeviceIndex] = option{InAgent}
+            do:
+                PlayerReferenceDevice.Enable()
+                PlayerReferenceDevice.Register(InAgent)
+                break
+            break
+
+    UnregisterUsedReference(InAgent : agent):void =
+        for:
+            DeviceIndex -> PlayerReferenceDevice : PlayerReferenceDevices
+            PlayerReferenceIndexAgentMap[DeviceIndex]? = InAgent
+            set PlayerReferenceIndexAgentMap[DeviceIndex] = false
+        do:
+            PlayerReferenceDevice.Clear()
+            PlayerReferenceDevice.Clear()
+            PlayerReferenceDevice.Disable()
+
+rr_team_selector := class(rr_state_handler_interface, fn_gameplay_state_triggerable):
     # Objects
     TeamCollection:fort_team_collection
     ParticipantManager:rr_participant_manager
@@ -71,7 +95,7 @@ rr_team_selector := class(rr_state_handler_interface):
     TeamSelectTimerDurationMap:[int]float
     # Variables / Events
     TeamSelectedEvent:event(agent) = event(agent){}
-    var AgentPlayerReferenceMap:[agent]player_reference_device = map{}
+    var AgentSelectableTeamMap:[agent]?rr_selectable_team = map{}
     var NeutralizedAgents:[]agent = array{}
     var TrustVolumeExitEvents:logic=false
 
@@ -119,6 +143,8 @@ rr_team_selector := class(rr_state_handler_interface):
         else:
             Print("No Team Select Timer Duration...The Next State (Combat Round) Should Start Soon!")
 
+    
+
     # ExitTeamSelect<override>()<suspends>:void =
     #     for(SelectableTeam : SelectableTeams):
     #         SelectableTeam.Hide()
@@ -147,11 +173,11 @@ rr_team_selector := class(rr_state_handler_interface):
                 SelectableTeam.Show()
                 TeamMembers.TeleportToOrRespawnAt(SelectableTeam.VolumeTeleporters)
                 for:
-                    MemberIndex -> TeamMember : TeamMembers
-                    PlayerReferenceDevice := SelectableTeam.PlayerReferenceDevices[MemberIndex]
-                    set AgentPlayerReferenceMap[TeamMember] = PlayerReferenceDevice
+                    TeamMember : TeamMembers
+                    set AgentSelectableTeamMap[TeamMember] = option{SelectableTeam}
                 do:
-                    PlayerReferenceDevice.Register(TeamMember)
+                    SelectableTeam.RegisterUnusedReference(TeamMember)
+
             else if(Count < MaxNumberOfNewTeams):
                 SelectableTeam.Show()
                 set Count += 1
@@ -182,8 +208,11 @@ rr_team_selector := class(rr_state_handler_interface):
         if(GetMainDevicePlayspace().GetTeamCollection()._SetTeam[InAgent, NeutralTeamIndex, ?Force := true]):
             NeutralTeamSelector.ChangeTeam(InAgent)
             set NeutralizedAgents = NeutralizedAgents.SetAdd(InAgent)
-            if(CurrentPlayerReference := AgentPlayerReferenceMap[InAgent]):
-                CurrentPlayerReference.Clear()
+            if:
+                PriorSelectableTeam := AgentSelectableTeamMap[InAgent]?
+                set AgentSelectableTeamMap[InAgent] = false
+            then:
+                PriorSelectableTeam.UnregisterUsedReference(InAgent)
 
     ListenVolumeSelections<private>(InSelectableTeam : rr_selectable_team)<suspends>:void =
         sync:
@@ -205,17 +234,13 @@ rr_team_selector := class(rr_state_handler_interface):
     SelectTeam(InAgent : agent, Index : int):logic =
         if:
             SelectableTeam := GetSelectableTeamWithIndex[Index]
-            PlayerIndexOnTeam := TeamCollection._SetTeam[InAgent, SelectableTeam.Index, ?Capacity := SelectableTeamCapacity, ?Force := false] - 1
+            TeamCollection._SetTeam[InAgent, SelectableTeam.Index, ?Capacity := SelectableTeamCapacity, ?Force := false]
         then:
+            if(PriorSelectableTeam := AgentSelectableTeamMap[InAgent]?):
+                PriorSelectableTeam.UnregisterUsedReference(InAgent)
+            if(set AgentSelectableTeamMap[InAgent] = option{SelectableTeam}):
+                SelectableTeam.RegisterUnusedReference(InAgent)
             SelectableTeam.Selector.ChangeTeam(InAgent)
-            if(CurrentPlayerReference := AgentPlayerReferenceMap[InAgent]):
-                CurrentPlayerReference.Clear()
-                CurrentPlayerReference.Clear()
-            if:
-                NewPlayerReference := SelectableTeam.PlayerReferenceDevices[PlayerIndexOnTeam]
-                set AgentPlayerReferenceMap[InAgent] = NewPlayerReference
-            then:
-                NewPlayerReference.Register(InAgent)
             SelectableTeam.SFX.Play(InAgent)
             AwardXP(InAgent, rr_award.SelectedTeam)
             set NeutralizedAgents = NeutralizedAgents.RemoveAllElements(InAgent)
@@ -223,10 +248,6 @@ rr_team_selector := class(rr_state_handler_interface):
             true
         else:
             false
-
-    # AutoSelect<public>():void = 
-    #     for(NeutralizedAgent : NeutralizedAgents):
-    #         AutoSelect(NeutralizedAgent)
 
     AutoSelect(InAgent : agent):void =
         ParticipantCount := ParticipantManager.GetInitializedParticipants().Length
@@ -256,6 +277,12 @@ rr_team_selector := class(rr_state_handler_interface):
         else:
             SortBy(TeamIndexMemberPairings, TupleSecondLesserComp)
 
+    GetStateToTrigger<override>()<transacts>:comparable = 
+        if(TeamCollection._GetTeamsWithMembersMap().Length > 1):
+            rr_state_enum.CombatRound
+        else:
+            rr_state_enum.OpponentsLeft
+
     GetStateListenersMap<override>()<transacts>:[comparable][]fn_gameplay_state_listenable = 
         map:
             rr_state_enum.WaitingForPlayers => array:
@@ -264,69 +291,4 @@ rr_team_selector := class(rr_state_handler_interface):
             rr_state_enum.TeamSelect => array:
                 fn_gameplay_state_listener:
                     EnterCallback := option{EnterTeamSelect}
-                    PostExecutionTrigger := option:
-                        fn_gameplay_state_trigger:
-                            DefaultStateToTrigger := rr_state_enum.CombatRound
-
-        # RefreshUI():void =
-    #     TeamCollection := GetMainDevicePlayspace().GetTeamCollection()
-    #     for:
-    #         SelectableTeam : SelectableTeams
-    #     do:
-    #         TeamMembers := TeamCollection._GetTeamMembers[SelectableTeam.Index] or array{}
-    #         TeamMembersMessage := Join of for(I := 0..1):
-    #             if(TeamMember := TeamMembers[I]):
-    #                 DialogPlayerMemberMessage(SelectableTeam.Index, TeamMember)
-    #             else:
-    #                 DialogPlayerSlotMessage(I + 1)
-    #         SelectTeamDialog.SetButtonText(TeamMembersMessage, SelectableTeam.Index - 1)
-
-    # ShowUI():void =
-    #     RefreshUI()
-    #     SelectTeamDialog.Show()
-
-    # ShowUI(InAgent : agent):void =
-    #     RefreshUI()
-    #     SelectTeamDialog.Show(InAgent)
-
-    # HideUI():void =
-    #     SelectTeamDialog.Hide() 
-
-    # HideUI(InAgent : agent):void = 
-    #     SelectTeamDialog.Hide(InAgent) 
-
-    # ListenUISelections<private>()<suspends>:void =
-    #     TeamCollection := GetMainDevicePlayspace().GetTeamCollection()
-    #     loop:
-    #         AgentIndex := SelectTeamDialog.RespondingButtonEvent.Await()
-    #         if:
-    #             SelectableTeam := SelectableTeams[AgentIndex(1)]
-    #             TeamIndex := SelectableTeam.Index
-    #             Print("Selected Button Index {AgentIndex(1)} which is Team Index {TeamIndex}")
-    #             TeamCollection._SetTeam[AgentIndex(0), TeamIndex, ?Capacity := SelectableTeamCapacity, ?Force := false]
-    #         then:
-    #             SelectableTeam.Selector.ChangeTeam(AgentIndex(0))
-    #             AwardXP(AgentIndex(0), rr_award.SelectedTeam)
-    #             set NeutralizedAgents = NeutralizedAgents.RemoveAllElements(AgentIndex(0))
-    #             Print("Team Set on {TeamIndex} Succeeded! Removed them from NeutralizedAgents")
-    #             RefreshUI()
-    #         else:
-    #             ShowUI(AgentIndex(0))
-    #             Print("Team Set Failed! Attempted to Show Again")
-
-    # AwaitUISelection<public>(InAgent : agent)<suspends>:void =
-    #     loop:
-    #         AgentIndex := SelectTeamDialog.RespondingButtonEvent.Await()
-    #         Print("Agent Selected a Team??? Why no Print")
-    #         if(AgentIndex(0) = InAgent):
-    #             break
-
-# Team Select Player Member Message
-# DialogPlayerMemberMessage<localizes><internal>(Enumeration : int, InAgent : agent):message = "{Enumeration}. {InAgent}\n"
-
-# # Team Select Dialog Empty Slot Message
-# DialogPlayerSlotMessage<localizes><internal>(Enumeration : int):message = "{Enumeration}.\n"
-
-# Basic Scores Comparator
-# TeamScoresComparator<public>(Lhs : tuple(int, int), Rhs : tuple(int, int))<computes><decides>:void =
-#     Lhs(1) > Rhs(1)
+                    PostExecutionTrigger := option{Self}

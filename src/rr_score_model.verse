@@ -13,6 +13,8 @@ rr_score_model := class(rr_state_handler_interface):
     LoseRoundHUD : hud_message_device
     var AgentScoreMap : [agent]int = map{}
 
+    # TODO: Need to clear the round win registers
+
     RoundWin<public>(InAgents : []agent):void =
         for(Index -> InAgent : InAgents):
             RoundWin(InAgent)
@@ -54,6 +56,12 @@ rr_score_model := class(rr_state_handler_interface):
             AgentScore(0)
 
     EnterRematchRequeue<override>()<suspends>:void =
+        ShowBestPerforming()
+
+    EnterOpponentsLeft<override>()<suspends>:void =
+        ShowBestPerforming()
+
+    ShowBestPerforming():void = 
         for:
             Index -> Agent : GetAgentsSortedByScore()
         do:
@@ -68,3 +76,6 @@ rr_score_model := class(rr_state_handler_interface):
             rr_state_enum.RematchRequeue => array:
                 fn_gameplay_state_listener:
                     EnterCallback := option{EnterRematchRequeue}
+            rr_state_enum.OpponentsLeft => array:
+                fn_gameplay_state_listener:
+                    EnterCallback := option{EnterOpponentsLeft}

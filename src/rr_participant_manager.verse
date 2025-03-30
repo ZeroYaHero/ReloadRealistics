@@ -1,11 +1,13 @@
 using { /Fortnite.com/Characters }
+using { /Fortnite.com/Devices }
 using { /Verse.org/Simulation }
 
 using { FN_Gameplay }
 
 rr_participant_manager := class(fn_gameplay_participant_manager, fn_gameplay_state_observer):
 
-    var CurrentState : comparable = comparable()
+    var CurrentState:comparable = comparable()
+    MiddleOfRoundHUD:hud_message_device
 
     EnumMap : [comparable]rr_state_enum = map:
         rr_state_enum.WaitingForPlayers =>  rr_state_enum.WaitingForPlayers
@@ -23,7 +25,7 @@ rr_participant_manager := class(fn_gameplay_participant_manager, fn_gameplay_sta
             loop:
                 if(Player.IsActive[]):
                     break
-                Sleep(0.0)
+                AwaitServerTick()
         FortCharacter := InAgent.GetFortCharacter[] or InAgent.GetFortCharacterSuspends()
         InitializeCauseCombatEvents(InAgent, FortCharacter)
 
@@ -36,7 +38,10 @@ rr_participant_manager := class(fn_gameplay_participant_manager, fn_gameplay_sta
             case(CurrentEnum):
                 # rr_state_enum.WaitingForPlayers => InAgent.EliminateCharacter()
                 # rr_state_enum.TeamSelect => void
-                rr_state_enum.CombatRound => spawn{RepeatAttemptEliminateCharacter(InAgent)}
+                rr_state_enum.CombatRound =>
+                    MiddleOfRoundHUD.Show(InAgent)
+                    GiveOneSpawn(InAgent) 
+                    spawn{RepeatAttemptEliminateCharacter(InAgent)}
                 # rr_state_enum.RematchRequeue => InAgent.EliminateCharacter()
                 # rr_state_enum.OpponentsLeft => InAgent.EliminateCharacter()
                 # rr_state_enum.GameEnd => InAgent.EliminateCharacter()

@@ -25,35 +25,26 @@ rr_config_duos<public> := class(rr_abstract_config):
             Color := NamedColors.Yellow 
     SupplyDropTimesAndQuantities<override> : []tuple(float, int) = array:
         (10.0, 2)
-        (45.0, 3)
-        (60.0, 2)
+        (45.0, 2)
+        (45.0, 2)
     InitialStormPhaseRadiusCM<override> : float = 8500.0
     Reboot<override> : rr_reboot_parameters = rr_reboot_parameters:
-        SkyZ := 384.0 * 40
-        KnockSkip := 2.0
-        EliminationSkip := 4.0
-        TeamWipeSkip := 10.0
-        MinimumTeammatesAliveRequired := 1
-        MaximumRebootBank := 1
-        RebootRiftLifetime := 10.0
-        RebootStates := array:
-            rr_reboot_state:
-                TimeToReboot := 1.0
-                Duration := 15.0
-            rr_reboot_state:
-                TimeToReboot := 3.0
-                Duration := 30.0
-            rr_reboot_state:
-                TimeToReboot := 5.0
-                Duration := 30.0
-            rr_reboot_state:
-                TimeToReboot := 7.0
-                Duration := 60.0
-                ShowTimer := true
+        SkyZ<override> := 384.0 * 40
+        KnockSkip<override> := 2.0
+        EliminationSkip<override> := 4.0
+        TeamWipeSkip<override> := 10.0
+        MinimumTeammatesAliveRequired<override> := 1
+        MaximumRebootBank<override> := 1
+        RebootRiftLifetime<override> := 10.0
+        RespawnDurations<override> := array:
+            (1.0, 15.0)
+            (3.0, 30.0)
+            (5.0, 45.0)
+            (7.0, 60.0)
     ScoreHUD<override> : rr_score_hud_parameters = rr_score_hud_parameters:
-        HorizontalPadding<override> := 10.0
-        CrownTeamBlockPadding<override> := 5.0
-        TextureBlockXYSize<override> := 75.0
+        HorizontalPadding<override> := 8.0
+        CrownTeamBlockPadding<override> := 3.0
+        TextureBlockXYSize<override> := 64.0
         TextShadowOpacity<override> := 0.3
         TextColor<override> := color:
             R := 1.0
@@ -74,7 +65,7 @@ rr_config_duos<public> := class(rr_abstract_config):
             Y := 0.0
         PositionOffset<override> := vector2:
             X := 35.0
-            Y := 60.0
+            Y := 405.0
         TeamBlockTexture<override> := RR_UI.TeamScoring.T_TeamBlock
         TeamBlockYouTexture<override> := RR_UI.TeamScoring.T_TeamBlockYou
         YouUnderTexture<override> := RR_UI.TeamScoring.T_YouUnder
@@ -112,4 +103,15 @@ rr_config_duos<public> := class(rr_abstract_config):
         6 => 10.0
         7 => 12.0
         8 => 12.0
+
+    StormRanges<override>:[]tuple(float, float) = array:
+        (512.0, 1024.0)
+        (2048.0, 4096.0)
+
+    StormBeaconTags<override>:[]round_storm_device_tag = 
+        array:
+            round_storm_1_device_tag{}
+            round_storm_2_device_tag{}
+            round_storm_3_device_tag{}
+
 

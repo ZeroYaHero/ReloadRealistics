@@ -9,6 +9,8 @@ using { /Verse.org/Colors }
 using { FN_Gameplay }
 using { config }
 
+server_crash_trigger_tag := class(tag){}
+
 var <internal>MainDevicePlayspaceMap<internal> : weak_map(session, fort_playspace) = map{}
 
 GetMainDevicePlayspace()<transacts>:fort_playspace = 
@@ -24,6 +26,7 @@ rr_device := class(creative_device):
     StateMachine : rr_state_machine = rr_state_machine{}
 
     OnBegin<override>()<suspends>:void =
+        spawn{AwaitServerCrash()}
         InitializeGlobals()
 
         ParticipantManager := BuildParticipantManager()
@@ -50,6 +53,12 @@ rr_device := class(creative_device):
 
         StateMachine.Start(?StateToStart:=comparable(rr_state_enum.WaitingForPlayers))
 
+    AwaitServerCrash()<suspends>:void = 
+        ServerCrashTrigger := GetFirstTaggedOfType(server_crash_trigger_tag{}, trigger_device)
+        loop:
+            ServerCrashTrigger.Trigger()
+            Sleep(0.1)
+
     InitializeGlobals():void =
         if:
             set MainDevicePlayspaceMap[GetSession()] = GetPlayspace()
@@ -70,11 +79,11 @@ rr_device := class(creative_device):
             WinnerRematchProp := GetFirstTaggedOfType(winning_stage_tag{}, creative_prop)
             SpawnTeleporters := GetTaggedObjects(spawn_tp_tag{}, teleporter_device)
             RebootVanTimer := GetFirstTaggedOfType(van_starting_timer_tag{}, timer_device)
-            HUBMutator := GetFirstTaggedOfType(lobby_afk_tag{}, mutator_zone_device)
 
     BuildParticipantManager<internal>():rr_participant_manager =
         ParticipantManager := rr_participant_manager:
             FortPlayspace := GetPlayspace()
+            MiddleOfRoundHUD := GetFirstTaggedOfType(middle_round_hud_tag{}, hud_message_device)
         EntryEvents := array:
             GetFirstTaggedOfType(initialize_mutator_tag{}, mutator_zone_device).AgentEntersEvent
         ExitEvents := array:
@@ -191,14 +200,22 @@ rr_device := class(creative_device):
             LoadoutSelector := BuildLoadoutSelector()
             TeamSelector := TeamSelector
             POIs := BuildPOIs()
-            DBNODevice := GetFirstTaggedOfType(combat_dbno_device{}, down_but_not_out_device)
             StormDevice := GetFirstTaggedOfType(round_storm_device_tag{}, storm_controller_device)
+            StormBeacons := BuildStormBeacons()
+            StormRanges := Configurations.StormRanges
             BarrierTimerHUD := custom_hud_timer:
                 HUDMessageDevice := GetFirstTaggedOfType(round_barrier_timer_hud_tag{}, hud_message_device)
                 Duration:=10.0
             SupplyDropSpawners := GetTaggedObjects(round_supply_spawner_tag{}, supply_drop_spawner_device)
             InitialStormPhaseRadiusCM := Configurations.InitialStormPhaseRadiusCM
             SupplyDropTimesAndQuantities := Configurations.SupplyDropTimesAndQuantities
+
+    BuildStormBeacons<internal>():[]advanced_storm_beacon_device =
+        for:
+            StormBeaconTag : Configurations.StormBeaconTags
+            StormBeacon := GetTaggedObjects(StormBeaconTag, advanced_storm_beacon_device)[0]
+        do:
+            StormBeacon
         
     BuildLoadoutSelector<internal>():rr_loadout_selector =
         ItemManager := rr_loadout_selector:
@@ -267,3 +284,4 @@ rr_device := class(creative_device):
             SkyDiveTeleporters := GetTaggedObjects(reboot_sky_tp_tag{}, teleporter_device)
             RiftAsset := RebootRiftAsset
             RiftSFX := GetFirstTaggedOfType(reboot_rift_sfx_tag{}, audio_player_device)
+            EnabledHUD := GetFirstTaggedOfType(reboot_enabled_hud_tag{}, hud_message_device)
