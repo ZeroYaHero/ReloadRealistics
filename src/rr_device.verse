@@ -8,225 +8,219 @@ using { /Verse.org/Colors }
 
 using { FN_Gameplay }
 using { config }
+using { state }
+using { scoring }
+using { teams }
 
 server_crash_trigger_tag := class(tag){}
 
-var <internal>MainDevicePlayspaceMap<internal> : weak_map(session, fort_playspace) = map{}
-
-GetMainDevicePlayspace()<transacts>:fort_playspace = 
-    MainDevicePlayspaceMap[GetSession()] or PrintAndErr("Tried to get MainDevicePlayspace before set")
-
 # Change to RR device
 rr_device := class(creative_device):
-
-    @editable       RebootRiftAsset : creative_prop_asset = DefaultCreativePropAsset
-    @editable       RebootMessageFeed : elimination_feed_device = elimination_feed_device{}
-    @editable       Configurations : rr_abstract_config = rr_config_duos{}
-
-    StateMachine : rr_state_machine = rr_state_machine{}
+    @editable   RebootRiftAsset : creative_prop_asset = DefaultCreativePropAsset
+    @editable   RebootMessageFeed : elimination_feed_device = elimination_feed_device{}
+    @editable   Configurations : rr_abstract_config = rr_config_duos{}
+    StateMachine:fn_gameplay_state_machine = fn_gameplay_state_machine{}
 
     OnBegin<override>()<suspends>:void =
         spawn{AwaitServerCrash()}
-        InitializeGlobals()
+        InitializeTeamCombatInteractionManager(GetFirstTagged(combat_dbno_device{}, down_but_not_out_device), GetPlayspace().GetTeamCollection())
+        InitializeAnalyzerAwarder()
 
         ParticipantManager := BuildParticipantManager()
-        HubManager := BuildHubManager(ParticipantManager)
         TeamSelector := BuildTeamSelector(ParticipantManager)
-        ScoreModel := BuildScoreModel()
-        ScoreView := BuildScoreView(ScoreModel, TeamSelector) 
-        RoundManager := BuildRoundManager(TeamSelector, ScoreModel)
+        Rebooter := BuildReloadRebooter()
+        ScoreController := BuildScoreController(ParticipantManager, TeamSelector)
+        RoundManager := BuildRoundManager(ScoreController, Rebooter)
+        HubManager := BuildHubManager(ParticipantManager)
+        ChestManager := BuildChestManager()
 
-        StateMachine.AddStateObserver(ParticipantManager)
-        StateMachine.AddStateHandler(ScoreModel)
-        StateMachine.AddStateHandler(ScoreView)
-        StateMachine.AddStateHandler(TeamSelector)
-        StateMachine.AddStateHandler(RoundManager)
-        StateMachine.AddStateHandler(HubManager)
-
-        # StateMachine.AddAutoCompleteTimer(rr_state_enum.TeamSelect, GetFirstTaggedOfType(team_select_auto_timer_tag{}, timer_device), rr_state_enum.CombatRound, ?StartOnState := false)
-        StateMachine.AddAutoCompleteTimer(rr_state_enum.RematchRequeue, GetFirstTaggedOfType(rematch_requeue_auto_timer_tag{}, timer_device), rr_state_enum.GameEnd, ?StartOnState := true)
-        StateMachine.AddAutoCompleteTimer(rr_state_enum.OpponentsLeft, GetFirstTaggedOfType(opponents_left_auto_timer_tag{}, timer_device), rr_state_enum.GameEnd, ?StartOnState := true)
-        StateMachine.AddAutoCompleteTimer(rr_state_enum.WaitingForPlayers, GetFirstTaggedOfType(van_starting_timer_tag{}, timer_device), rr_state_enum.TeamSelect, ?StartOnState := false)
-
+        StateMachine.AddStateHandler(BuildWaitingPlayersStateHandler(ParticipantManager, HubManager))
+        StateMachine.AddStateHandler(BuildTeamSelectStateHandler(ParticipantManager, TeamSelector, ScoreController))
+        StateMachine.AddStateHandler(BuildTransitionStateHandler(ParticipantManager, TeamSelector, RoundManager))
+        StateMachine.AddStateHandler(BuildCombatRoundStateHandler(RoundManager, ScoreController))
+        StateMachine.AddStateHandler(BuildEndStateHandler(ParticipantManager, HubManager, ScoreController))
+        
+        if(Configurations.Teams.TeamCapacity > 1):
+            ParticipantManager.ParticipantInitializedEvent().SubscribeAwaitable(TeamSelector.Neutralize)
+        ParticipantManager.ParticipantExitEvent().SubscribeAwaitable(Rebooter.Unregister)
+        
         for(Participant : GetPlayspace().GetParticipants()):
             ParticipantManager.OnParticipantEntry(Participant)
 
         StateMachine.Start(?StateToStart:=comparable(rr_state_enum.WaitingForPlayers))
 
-    AwaitServerCrash()<suspends>:void = 
-        ServerCrashTrigger := GetFirstTaggedOfType(server_crash_trigger_tag{}, trigger_device)
-        loop:
-            ServerCrashTrigger.Trigger()
-            Sleep(0.1)
-
-    InitializeGlobals():void =
-        if:
-            set MainDevicePlayspaceMap[GetSession()] = GetPlayspace()
-        else:
-            PrintAndErr("Failed to add MainDevicePlayspace to WeakMap")
-        InitializeTeamCombatInteractionManager(GetFirstTaggedOfType(combat_dbno_device{}, down_but_not_out_device), GetPlayspace().GetTeamCollection())
-        BuildAnalyzerAwarder()
-
-    BuildHubManager<internal>(ParticipantManager : rr_participant_manager):rr_hub_manager =
-        rr_hub_manager:
+    BuildWaitingPlayersStateHandler<internal>(ParticipantManager:rr_participant_manager, HubManager:rr_hub_manager):rr_waiting_players_state_handler =
+        WaitingPlayersStateHandler := rr_waiting_players_state_handler:
             ParticipantManager := ParticipantManager
-            OnePlayerHUD := GetFirstTaggedOfType(one_player_hud_tag{}, hud_message_device)
-            WaitingForPlayersTimer := GetFirstTaggedOfType(waiting_players_timer_tag{}, timer_device)
+            HubManager := HubManager
+            WaitingForPlayersTimer := GetFirstTagged(waiting_players_timer_tag{}, timer_device)
             AutoStartMinimum := Configurations.AutoStartMinimum
-            AutoStartVotingTimer := GetFirstTaggedOfType(auto_start_voting_tag{}, timer_device)
-            AutoStartVoteUI := GetFirstTaggedOfType(auto_start_voting_tag{}, popup_dialog_device)
-            AutoStartFailedHUD := GetFirstTaggedOfType(auto_start_voting_tag{}, hud_message_device)
-            WinnerRematchProp := GetFirstTaggedOfType(winning_stage_tag{}, creative_prop)
-            SpawnTeleporters := GetTaggedObjects(spawn_tp_tag{}, teleporter_device)
-            RebootVanTimer := GetFirstTaggedOfType(van_starting_timer_tag{}, timer_device)
+            AutoStartVoteUI := GetFirstTagged(auto_start_voting_tag{}, popup_dialog_device)
+            AutoStartVotingTimer := GetFirstTagged(auto_start_voting_tag{}, timer_device)
+            RebootVanTimer := GetFirstTagged(van_starting_timer_tag{}, timer_device)
+            HUDMessageDevice := GetFirstTagged(generic_hud_message_tag{}, hud_message_device)
+        WaitingPlayersStateHandler
+
+    BuildTeamSelectStateHandler<internal>(ParticipantManager:rr_participant_manager, TeamSelector:rr_team_selector, ScoreController:rr_scoring_controller):rr_team_select_state_handler =
+        rr_team_select_state_handler:
+            ParticipantManager := ParticipantManager
+            ScoreController := ScoreController
+            TeamProp := GetFirstTagged(team_prop_tag{}, creative_prop)
+            TeamSelector := TeamSelector
+            TeamSelectSFX := GetFirstTagged(state_sfx_tag{}, audio_player_device)
+            TeamSelectTimer := hud_message_timer:
+                HUDMessageDevice := GetFirstTagged(team_select_auto_timer_tag{}, hud_message_device)
+            TeamSelectTimerDurationMap := Configurations.Teams.TeamSelectTimerDurationMap
+            DefaultTeamSelectTimerDuration := Configurations.Teams.DefaultTeamSelectTimerDuration
+
+    BuildTransitionStateHandler<internal>(ParticipantManager:rr_participant_manager, TeamSelector:rr_team_selector, RoundManager:rr_round_manager):rr_transition_state_handler =
+        rr_transition_state_handler:
+            ParticipantManager := ParticipantManager
+            TeamSelector := TeamSelector
+            RoundManager := RoundManager
+
+    BuildCombatRoundStateHandler<internal>(RoundManager:rr_round_manager, ScoreController:rr_scoring_controller):rr_combat_round_state_handler =
+        rr_combat_round_state_handler:
+            RoundManager := RoundManager
+            ScoreController := ScoreController
+
+    BuildEndStateHandler<internal>(ParticipantManager:rr_participant_manager, HubManager:rr_hub_manager, ScoreController:rr_scoring_controller):rr_end_state_handler =
+        rr_end_state_handler:
+            ParticipantManager := ParticipantManager
+            HubManager := HubManager
+            ScoreController := ScoreController
+            RematchRequeueTimer := GetFirstTagged(rematch_requeue_auto_timer_tag{}, timer_device)
+            OpponentsLeftTimer := GetFirstTagged(opponents_left_auto_timer_tag{}, timer_device)
 
     BuildParticipantManager<internal>():rr_participant_manager =
         ParticipantManager := rr_participant_manager:
             FortPlayspace := GetPlayspace()
-            MiddleOfRoundHUD := GetFirstTaggedOfType(middle_round_hud_tag{}, hud_message_device)
+            HUDMessageDevice := GetFirstTagged(generic_hud_message_tag{}, hud_message_device)
         EntryEvents := array:
-            GetFirstTaggedOfType(initialize_mutator_tag{}, mutator_zone_device).AgentEntersEvent
+            GetFirstTagged(initialize_mutator_tag{}, mutator_zone_device).AgentEntersEvent
         ExitEvents := array:
             GetPlayspace().ParticipantRemovedEvent()
         ParticipantManager.SubscribeEntryAndExits(EntryEvents, ExitEvents)
         ParticipantManager
 
-    BuildScoreModel<internal>():rr_score_model =
-        rr_score_model:
-            ScoreManagerDevice := GetFirstTaggedOfType(score_device_tag{}, score_manager_device)
-            WinRoundHUD := GetFirstTaggedOfType(win_round_hud_tag{}, hud_message_device)
-            LoseRoundHUD := GetFirstTaggedOfType(lose_round_hud_tag{}, hud_message_device)
-            BestPerformingPlayerReferences := GetTaggedObjects(game_win_reference_tag{}, player_reference_device)
-            RoundWinPlayerReferences := GetTaggedObjects(round_win_reference_tag{}, player_reference_device)
-
-    BuildScoreView<internal>(ScoreModel : rr_score_model, TeamSelector : rr_team_selector):rr_score_view = 
-        ScoreView := rr_score_view:
-            ScoreModel := ScoreModel
-            TeamSelector := TeamSelector
-            Parameters := Configurations.ScoreHUD
-            TeamIndexColorMap := Configurations.SelectableTeamParameters.IndexColorMap()
-        ScoreView
-
-    BuildAnalyzerAwarder<internal>():rr_analyzer_awarder =
-        AnalyzerAwarder := rr_analyzer_awarder:
-            CollectedCoin := GetFirstTaggedOfType(coin_collectible_tag{}, accolades_device)
-            Collectibles := GetTaggedObjects(coin_collectible_tag{}, collectible_object_device)
-            LobbyAFK := GetFirstTaggedOfType(lobby_afk_tag{}, accolades_device)
-            LobbyMutator := GetFirstTaggedOfType(lobby_afk_tag{}, mutator_zone_device)
-            SupplyDropOpen := GetFirstTaggedOfType(supply_drop_open_tag{}, accolades_device)
-            SelectedTeam := GetFirstTaggedOfType(selected_team_tag{}, accolades_device)
-            Rebooted := GetFirstTaggedOfType(rebooted_tag{}, accolades_device)
-            Knock := GetFirstTaggedOfType(knock_opponent_tag{}, accolades_device)
-            Elimination := GetFirstTaggedOfType(eliminate_opponent_tag{}, accolades_device)
-            TeamWipe := GetFirstTaggedOfType(team_wipe_xp_tag{}, accolades_device)
-            PlayedRound := GetFirstTaggedOfType(played_round_tag{}, accolades_device)
-            WonRound := GetFirstTaggedOfType(won_round_tag{}, accolades_device)
-            PlayedGame := GetFirstTaggedOfType(played_game_tag{}, accolades_device)
-            WonGame := GetFirstTaggedOfType(won_game_tag{}, accolades_device)
-            DefaultSelected := GetFirstTaggedOfType(default_selected_tag{}, analytics_device)
-            SelectedLoadout1 := GetFirstTaggedOfType(selected_loadout_1_tag{}, analytics_device)
-            SelectedLoadout2 := GetFirstTaggedOfType(selected_loadout_2_tag{}, analytics_device)
-            SelectedLoadout3 := GetFirstTaggedOfType(selected_loadout_3_tag{}, analytics_device)
-            SelectedLoadout4 := GetFirstTaggedOfType(selected_loadout_4_tag{}, analytics_device)
-            SelectedLoadout5 := GetFirstTaggedOfType(selected_loadout_5_tag{}, analytics_device)
-            SelectedLoadout6 := GetFirstTaggedOfType(selected_loadout_6_tag{}, analytics_device)
-        AnalyzerAwarder.Initialize()
-        AnalyzerAwarder
-
     BuildTeamSelector<internal>(ParticipantManager : rr_participant_manager):rr_team_selector = 
         TeamSelector := rr_team_selector:
-            TeamCollection := GetPlayspace().GetTeamCollection()
             ParticipantManager := ParticipantManager
-            # SelectTeamDialog := GetFirstTaggedOfType(jip_team_ui_tag{}, popup_dialog_device)
-            FailedSelectHUD := GetFirstTaggedOfType(failed_join_hud_tag{}, hud_message_device)
+            TeamCollection := GetPlayspace().GetTeamCollection()
             SelectableTeams := BuildSelectableTeams()
-            NeutralTeamSelector := GetFirstTaggedOfType(neutral_team_tag{}, class_and_team_selector_device)
-            NeutralTeamSFX := GetFirstTaggedOfType(neutral_team_tag{}, audio_player_device)
-            NeutralTeamIndex := Configurations.NeutralTeamIndex
-            SelectableTeamCapacity := Configurations.SelectableTeamCapacity
-            MinimumSelectableTeams := Configurations.MinimumSelectableTeams
-            TeamSelectTeleporters := GetTaggedObjects(team_tp_tag{}, teleporter_device)
-            TeamSelectTimerHUD := custom_hud_timer:
-                HUDMessageDevice := GetFirstTaggedOfType(team_select_auto_timer_tag{}, hud_message_device)
-            TeamSelectStateSFX := GetFirstTaggedOfType(state_sfx_tag{}, audio_player_device)
-            TeamSelectTimerDurationMap := Configurations.TeamSelectTimerDurationMap
+            SelectableTeamCapacity := Configurations.Teams.TeamCapacity
+            MinimumTeamSizeForKeepSelect := Configurations.Teams.MinimumSizeForKeepSelect
+            MinimumSelectableTeams := Configurations.Teams.MinimumNumberOfTeams
+            NeutralizedIndex := Configurations.Teams.NeutralizedIndex
+            NeutralizedTeleporters := GetTaggedObjects(team_tp_tag{}, teleporter_device)
+            NeutralizedSFXDevice := GetFirstTagged(neutral_team_tag{}, audio_player_device)
+            HUDMessageDevice := GetFirstTagged(generic_hud_message_tag{}, hud_message_device)
         TeamSelector.Initialize()
         TeamSelector
 
     BuildSelectableTeams<internal>():[]rr_selectable_team =
-        var SelectableTeams : []rr_selectable_team = array{}
         for:
-            Index -> TeamParameter : Configurations.SelectableTeamParameters
-            TeamTag := Configurations.TeamTags[Index]
+            SelectableTeamConfig:Configurations.Teams.PlayableTeams
+            Tag := SelectableTeamConfig.Tag?
         do:
-            MaybeSelectableTeam := BuildSelectableTeam(TeamParameter, TeamTag)
-            if(SelectableTeam := MaybeSelectableTeam?):
-                set SelectableTeams += array{SelectableTeam}
-            else:
-                PrintAndErr("Could not build Team Data for Team Tag {Index + 1}")
-        SelectableTeams
+            rr_selectable_team:
+                Index := SelectableTeamConfig.Index
+                Name := SelectableTeamConfig.Name
+                Color := SelectableTeamConfig.Color
+                DisplayTeamSelectorDevice := GetFirstTagged(Tag, class_and_team_selector_device)
+                MutatorZoneDevice := GetFirstTagged(Tag, mutator_zone_device)
+                PlayerCounterDevice := GetFirstTagged(Tag, player_counter_device)
+                PlayerReferenceDevices := GetTaggedObjects(Tag, player_reference_device)
+                TeleporterDevices := GetTaggedObjects(Tag, teleporter_device)
+                SelectSFXDevice := GetFirstTagged(Tag, audio_player_device)
+                Tag := option{Tag}
 
-    BuildSelectableTeam<internal>(TeamParameter : rr_selectable_team_parameter, TeamTag : selectable_teams_tag):?rr_selectable_team =
-        TaggedObjects := FindCreativeObjectsWithTag(TeamTag)
-        if:
-            SelectVolume := TaggedObjects.CastGeneratedObjects(mutator_zone_device)[0]
-            ClassAndTeamSelector := TaggedObjects.CastGeneratedObjects(class_and_team_selector_device)[0]
-            SFX := TaggedObjects.CastGeneratedObjects(audio_player_device)[0]
-        then:
-            VolumeTeleporters := TaggedObjects.CastGeneratedObjects(teleporter_device)
-            PlayerReferenceDevices := TaggedObjects.CastGeneratedObjects(player_reference_device)
-            for:
-                Obj : TaggedObjects
-                MaybeDisplayTeamSelectorSelector := class_and_team_selector_device[Obj]
+    BuildReloadRebooter<internal>():rr_rebooter =
+        rr_rebooter:
+            Config := Configurations.Reboot
+            TeamCollection := GetPlayspace().GetTeamCollection()
+            DBNODevice := GetFirstTagged(combat_dbno_device{}, down_but_not_out_device)
+            TimeSkipHUD := GetFirstTagged(reboot_time_skip_tag{}, hud_message_device)
+            AllowedHUD := GetFirstTagged(reboot_enabled_hud_tag{}, hud_message_device)
+            DisallowedHUDCorner := GetFirstTagged(reboot_disabled_corner_tag{}, hud_message_device)
+            DisallowedHUDCenter := GetFirstTagged(reboot_disabled_center_tag{}, hud_message_device)
+            RebootsEndingHUDTimerCorner := hud_message_timer:
+                HUDMessageDevice := GetFirstTagged(reboot_status_corner_tag{}, hud_message_device)
+                KeepTimerOnScreenAfterSuccess := option{2.75}
+            RebootsEndingHUDTimerCenter := hud_message_timer:
+                HUDMessageDevice := GetFirstTagged(reboot_status_center_tag{}, hud_message_device)
+            RebootsEndingTimerTickSFX := GetFirstTagged(reboot_timer_sfx_tag{}, audio_player_device)
+            RebootsEndingUrgentTimerTickSFX := GetFirstTagged(reboot_urgent_timer_sfx_tag{}, audio_player_device)
+            WipeHUD := GetFirstTagged(reboot_team_wipe_tag{}, hud_message_device)
+            WipeSFX := GetFirstTagged(reboot_team_wipe_tag{}, audio_player_device)
+            RiftAsset := RebootRiftAsset
+            RiftSFX := GetFirstTagged(reboot_rift_sfx_tag{}, audio_player_device)
+            RiftTeleporterDevices := GetTaggedObjects(reboot_sky_tp_tag{}, teleporter_device)
+            RebootTimer := hud_message_timer:
+                HUDMessageDevice := GetFirstTagged(reboot_respawn_tag{}, hud_message_device)
+            RebootItemGranter := GetFirstTagged(reboot_granter_tag{}, item_granter_device)
+            RebootMessageFeed := RebootMessageFeed
+            HoldToRebootInputTrigger := GetFirstTagged(reboot_input_tag{}, input_trigger_device)
+            HoldToRebootUI := GetFirstTagged(reboot_input_hud_tag{}, hud_message_device)
+            HoldToRebootUIAnimation := GetFirstTagged(reboot_input_anim_tag{}, hud_message_device)
+            HoldToRebootArrowHUD := GetFirstTagged(reboot_input_arrow_tag{}, hud_message_device)
+            DisallowedSFX := GetFirstTagged(reboot_disallowed_sfx_tag{}, audio_player_device)
+            RebootBanks := for:
+                RebootBankTag:Configurations.Reboot.RebootBankTags
+                RebootBankHUDMessage := GetTaggedObjects(RebootBankTag, hud_message_device)[0]
             do:
-                TagView := MaybeDisplayTeamSelectorSelector.GetTags()
-                if(TagView.Has[display_selector_tag{}]):
-                    return option:
-                        rr_selectable_team:
-                            Index := TeamParameter.Index
-                            Color := TeamParameter.Color
-                            SelectVolume := SelectVolume
-                            Selector := ClassAndTeamSelector
-                            DisplaySelector := MaybeDisplayTeamSelectorSelector
-                            PlayerReferenceDevices := PlayerReferenceDevices
-                            VolumeTeleporters := VolumeTeleporters
-                            SFX := SFX
-        return false
+                RebootBankHUDMessage
 
-    BuildRoundManager<internal>(TeamSelector : rr_team_selector, ScoreModel : rr_score_model):rr_round_manager =
+
+    BuildScoreController<internal>(ParticipantManager:rr_participant_manager, TeamSelector:rr_team_selector):rr_scoring_controller =
+        rr_scoring_controller:
+            TeamIndexConfigMap := Configurations.Teams.PlayableTeams.GetTeamIndexConfigMap()
+            TeamCollection := GetPlayspace().GetTeamCollection()
+            View := rr_scoring_view:
+                Config := Configurations.Scoring
+                RoundWinnerReferenceDevices := GetTaggedObjects(round_win_reference_tag{}, player_reference_device)
+                GameWinnerReferenceDevices := GetTaggedObjects(game_win_reference_tag{}, player_reference_device)
+                RoundWinHUD := GetFirstTagged(win_round_hud_tag{}, hud_message_device)
+                RoundLoseHUD := GetFirstTagged(lose_round_hud_tag{}, hud_message_device)
+
+    BuildRoundManager<internal>(ScoreController : rr_scoring_controller, Rebooter : rr_rebooter):rr_round_manager =
         rr_round_manager:
-            ScoreModel := ScoreModel
-            RebootManager := BuildRebootManager()
+            Config := Configurations.Rounds
+            TeamCollection := GetPlayspace().GetTeamCollection()
+            PlayableTeams := Configurations.Teams.PlayableTeams
+            ScoreController := ScoreController
+            Rebooter := Rebooter
             LoadoutSelector := BuildLoadoutSelector()
-            TeamSelector := TeamSelector
+            EliminationManagerDevice := GetFirstTagged(round_elim_manager_tag{}, elimination_manager_device)
             POIs := BuildPOIs()
-            StormDevice := GetFirstTaggedOfType(round_storm_device_tag{}, storm_controller_device)
+            DBNODevice := GetFirstTagged(combat_dbno_device{}, down_but_not_out_device)
+            StormDevice := GetFirstTagged(round_storm_device_tag{}, storm_controller_device)
             StormBeacons := BuildStormBeacons()
-            StormRanges := Configurations.StormRanges
-            BarrierTimerHUD := custom_hud_timer:
-                HUDMessageDevice := GetFirstTaggedOfType(round_barrier_timer_hud_tag{}, hud_message_device)
+            BarrierTimerHUD := hud_message_timer:
+                HUDMessageDevice := GetFirstTagged(round_barrier_tag{}, hud_message_device)
                 Duration:=10.0
+            BarrierSFX := GetFirstTagged(round_barrier_tag{}, audio_player_device)
             SupplyDropSpawners := GetTaggedObjects(round_supply_spawner_tag{}, supply_drop_spawner_device)
-            InitialStormPhaseRadiusCM := Configurations.InitialStormPhaseRadiusCM
-            SupplyDropTimesAndQuantities := Configurations.SupplyDropTimesAndQuantities
+            RoundPOIHUD := GetFirstTagged(round_poi_hud_tag{}, hud_message_device)
+            POIBarrier := GetFirstTagged(round_barrier_tag{}, barrier_device)
 
     BuildStormBeacons<internal>():[]advanced_storm_beacon_device =
         for:
-            StormBeaconTag : Configurations.StormBeaconTags
+            StormBeaconTag : Configurations.Rounds.StormBeaconTags
             StormBeacon := GetTaggedObjects(StormBeaconTag, advanced_storm_beacon_device)[0]
         do:
             StormBeacon
         
     BuildLoadoutSelector<internal>():rr_loadout_selector =
-        ItemManager := rr_loadout_selector:
-            WeaponSelectDialog := GetFirstTaggedOfType(loadout_ui_tag{}, popup_dialog_device)
-            KeepSelectDialog := GetFirstTaggedOfType(keep_loadout_dialog_tag{}, popup_dialog_device)
-            AlwaysGranter := GetFirstTaggedOfType(always_granter_tag{}, item_granter_device)
-            ItemRemover := GetFirstTaggedOfType(item_remover_tag{}, item_remover_device)
+        LoadoutSelector := rr_loadout_selector:
+            WeaponSelectDialog := GetFirstTagged(loadout_ui_tag{}, popup_dialog_device)
+            KeepSelectDialog := GetFirstTagged(keep_loadout_dialog_tag{}, popup_dialog_device)
+            AlwaysGranter := GetFirstTagged(always_granter_tag{}, item_granter_device)
+            ItemRemover := GetFirstTagged(item_remover_tag{}, item_remover_device)
             LoadoutGranters := BuildLoadoutGranters()
             RandomGranters := GetTaggedObjects(random_granter_tag{}, item_granter_device)
-        ItemManager.Initialize()
-        return ItemManager
+        LoadoutSelector.Initialize()
+        LoadoutSelector
 
     BuildLoadoutGranters<internal>():[]item_granter_device =
         for:
@@ -237,51 +231,75 @@ rr_device := class(creative_device):
 
     BuildPOIs<internal>():[]rr_poi =
         Shuffle of for:
-            POITag : Configurations.POITags
-            GetTaggedObjects(POITag, creative_device_base)[0]
+            POI : Configurations.POIs.TagAndNames
+            GetTaggedObjects(POI(0), creative_device_base)[0]
         do:
-            BuildPOI(POITag)
+            BuildPOI(POI)
 
-    BuildPOI<internal>(POITag : rr_poi_tags):rr_poi =
+    BuildPOI<internal>(TagAndName:tuple(rr_poi_tags, string)):rr_poi =
         rr_poi:
+            Name := TagAndName(1)
             Barriers := for:
-                Obj : FindCreativeObjectsWithTag(POITag)
+                Obj : FindCreativeObjectsWithTag(TagAndName(0))
                 Barrier := barrier_device[Obj]
             do:
                 Barrier
-            TeamPairings := for(PairingTag : Configurations.PairingTags):
-                ((POITag, PairingTag, first_team_tag{}), (POITag, PairingTag, second_team_tag{})).MapTup(BuildPOITeleporters)
-            CenterPositionProp := GetFirstTaggedOfType(POITag, creative_prop)
+            TeamPairings := for(TeleporterPairingTags : Configurations.POIs.TeleporterPairingTags):
+                ((TagAndName(0), TeleporterPairingTags, first_team_tag{}), (TagAndName(0), TeleporterPairingTags, second_team_tag{})).MapTup(BuildPOITeleporters)
+            CenterPositionProp := GetFirstTagged(TagAndName(0), creative_prop)
 
-    BuildPOITeleporters<internal>(POITag : rr_poi_tags, PairingTag : rr_poi_pairing_tags, TeamTag : rr_poi_pairing_tags):[]teleporter_device =
+    BuildPOITeleporters<internal>(POITag : rr_poi_tags, TeleporterPairingTags : rr_poi_pairing_tags, TeamTag : rr_poi_pairing_tags):[]teleporter_device =
         FilterOp of for(Obj : FindCreativeObjectsWithTag(POITag)):
             TagView := Obj.GetTags()
             if:
-                TagView.HasAll[array{PairingTag, TeamTag}]
+                TagView.HasAll[array{TeleporterPairingTags, TeamTag}]
                 Teleporter := teleporter_device[Obj]
             then:
                 option{Teleporter}
             else:
                 false
 
-    BuildRebootManager<internal>():rr_reboot_manager = 
-        rr_reboot_manager:
-            RebootParameters := Configurations.Reboot
-            RebootTimerDevice := GetFirstTaggedOfType(reboot_respawn_tag{}, timer_device)
-            DisabledHUD := GetFirstTaggedOfType(reboot_disabled_corner_tag{}, hud_message_device)
-            ItemGranter := GetFirstTaggedOfType(reboot_granter_tag{}, item_granter_device)
-            TeamWipeHUD := GetFirstTaggedOfType(reboot_team_wipe_tag{}, hud_message_device)
-            TeamWipeSFX := GetFirstTaggedOfType(reboot_team_wipe_tag{}, audio_player_device)
-            HoldToRebootTrigger := GetFirstTaggedOfType(reboot_input_tag{}, input_trigger_device)
-            HoldToRebootHUDNoAnim := GetFirstTaggedOfType(reboot_input_hud_tag{}, hud_message_device)
-            HoldToRebootHUDAnim := GetFirstTaggedOfType(reboot_input_anim_tag{}, hud_message_device)
-            StatusTimerCenterHUD :=  custom_hud_timer:
-                HUDMessageDevice := GetFirstTaggedOfType(reboot_status_center_tag{}, hud_message_device)
-            StatusTimerCornerHUD :=  custom_hud_timer:
-                HUDMessageDevice := GetFirstTaggedOfType(reboot_status_corner_tag{}, hud_message_device)
-            DBNODevice := GetFirstTaggedOfType(combat_dbno_device{}, down_but_not_out_device)
-            RebootMessageFeed := RebootMessageFeed
-            SkyDiveTeleporters := GetTaggedObjects(reboot_sky_tp_tag{}, teleporter_device)
-            RiftAsset := RebootRiftAsset
-            RiftSFX := GetFirstTaggedOfType(reboot_rift_sfx_tag{}, audio_player_device)
-            EnabledHUD := GetFirstTaggedOfType(reboot_enabled_hud_tag{}, hud_message_device)
+    BuildHubManager<internal>(ParticipantManager : rr_participant_manager):rr_hub_manager =
+        rr_hub_manager:
+            WinnerRematchProp := GetFirstTagged(winning_stage_tag{}, creative_prop)
+            SpawnTeleporters := GetTaggedObjects(spawn_tp_tag{}, teleporter_device)
+
+    BuildChestManager<internal>():rr_chest_manager =
+        ChestManager := rr_chest_manager:
+            ChestTracker := GetFirstTagged(chest_tag{}, tracker_device)
+            ChestGranters := GetTaggedObjects(chest_tag{}, item_granter_device)
+        ChestManager.Initialize()
+        ChestManager
+
+    InitializeAnalyzerAwarder<internal>():rr_analyzer_awarder =
+        AnalyzerAwarder := rr_analyzer_awarder:
+            CollectedCoin := GetFirstTagged(coin_collectible_tag{}, accolades_device)
+            Collectibles := GetTaggedObjects(coin_collectible_tag{}, collectible_object_device)
+            LobbyAFK := GetFirstTagged(lobby_afk_tag{}, accolades_device)
+            LobbyMutator := GetFirstTagged(lobby_afk_tag{}, mutator_zone_device)
+            SupplyDropOpen := GetFirstTagged(supply_drop_open_tag{}, accolades_device)
+            SelectedTeam := GetFirstTagged(selected_team_tag{}, accolades_device)
+            Rebooted := GetFirstTagged(rebooted_tag{}, accolades_device)
+            Knock := GetFirstTagged(knock_opponent_tag{}, accolades_device)
+            Elimination := GetFirstTagged(eliminate_opponent_tag{}, accolades_device)
+            TeamWipe := GetFirstTagged(team_wipe_xp_tag{}, accolades_device)
+            PlayedRound := GetFirstTagged(played_round_tag{}, accolades_device)
+            WonRound := GetFirstTagged(won_round_tag{}, accolades_device)
+            PlayedGame := GetFirstTagged(played_game_tag{}, accolades_device)
+            WonGame := GetFirstTagged(won_game_tag{}, accolades_device)
+            ChestOpen := GetFirstTagged(chest_tag{}, accolades_device)
+            DefaultSelected := GetFirstTagged(default_selected_tag{}, analytics_device)
+            SelectedLoadout1 := GetFirstTagged(selected_loadout_1_tag{}, analytics_device)
+            SelectedLoadout2 := GetFirstTagged(selected_loadout_2_tag{}, analytics_device)
+            SelectedLoadout3 := GetFirstTagged(selected_loadout_3_tag{}, analytics_device)
+            SelectedLoadout4 := GetFirstTagged(selected_loadout_4_tag{}, analytics_device)
+            SelectedLoadout5 := GetFirstTagged(selected_loadout_5_tag{}, analytics_device)
+            SelectedLoadout6 := GetFirstTagged(selected_loadout_6_tag{}, analytics_device)
+        AnalyzerAwarder.Initialize()
+        AnalyzerAwarder
+
+    AwaitServerCrash()<suspends>:void = 
+        ServerCrashTrigger := GetFirstTagged(server_crash_trigger_tag{}, trigger_device)
+        loop:
+            ServerCrashTrigger.Trigger()
+            Sleep(0.1)

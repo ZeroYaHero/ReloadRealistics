@@ -5,47 +5,57 @@ using { /Verse.org/Colors }
 
 using { src }
 
-rr_config_duos<public> := class(rr_abstract_config):
-    AutoStartMinimum<override> : int = 4
+rr_config_solos<public> := class(rr_abstract_config):
+    AutoStartMinimum<override> : int = 2
 
     Teams<override>:rr_teams_config = rr_teams_config:
         MinimumNumberOfTeams<override> := 2
-        TeamCapacity<override> := 2
-        NeutralizedIndex<override> := 0
-        MinimumSizeForKeepSelect<public> := 2
-        TeamSelectTimerDurationMap<public> := map:
-            3 => 8.0
-            4 => 8.0
-            5 => 10.0
-            6 => 10.0
-            7 => 12.0
-            8 => 12.0
-        DefaultTeamSelectTimerDuration<public> := 10.0
+        TeamCapacity<override> := 1
+        NeutralizedIndex<override> := -1
+        MinimumSizeForKeepSelect<public> := 1
+        TeamSelectTimerDurationMap<public> := map{}
+        DefaultTeamSelectTimerDuration<public> := -1.0
         PlayableTeams<override> := array:
             rr_team_config:
                 Index := 1
                 Name := "Blue"
                 Color := NamedColors.Blue
-                Tag := option:
-                    team_one_tag{}
+                Tag := false
             rr_team_config:
                 Index := 2
                 Name := "Red"
                 Color := NamedColors.Red
-                Tag := option:
-                    team_two_tag{}
+                Tag := false
             rr_team_config:
                 Index := 3
                 Name := "Green"
                 Color := NamedColors.LimeGreen
-                Tag := option:
-                    team_three_tag{}
+                Tag := false
             rr_team_config:
                 Index := 4
                 Name := "Yellow"
-                Color := NamedColors.Yellow 
-                Tag := option:
-                    team_four_tag{}
+                Color := NamedColors.Yellow
+                Tag := false
+            rr_team_config:
+                Index := 5
+                Name := "Purple"
+                Color := NamedColors.Purple
+                Tag := false
+            rr_team_config:
+                Index := 6
+                Name := "Orange"
+                Color := NamedColors.Orange
+                Tag := false
+            rr_team_config:
+                Index := 7
+                Name := "Cyan"
+                Color := NamedColors.Cyan
+                Tag := false
+            rr_team_config:
+                Index := 8
+                Name := "Pink"
+                Color := NamedColors.Pink
+                Tag := false
 
     Reboot<override>:rr_reboot_config = rr_reboot_config:
         DownTimeSkip<override> := 2.0
@@ -56,18 +66,24 @@ rr_config_duos<public> := class(rr_abstract_config):
         RiftHeight<override> := 384.0 * 40
         RiftLifetime<override> := 10.0
         HoldToRebootArrowCount<override> := 2
-        WipeMessage<override> := EnemyTeamWipedMessage
+        WipeMessage<override> := EnemyWipedMessage
         RebootDurationCycles<override> := array:
             (1.0, 15.0)
             (3.0, 30.0)
             (5.0, 45.0)
             (7.0, 60.0)
-        RebootBankTags<override> := array{}
+        RebootBankTags<override> := array:
+            reboot_bank_1_tag{}
+            reboot_bank_2_tag{}
+            reboot_bank_3_tag{}
+            reboot_bank_4_tag{}
 
     POIs<override>:rr_pois_config = rr_pois_config:
         TeleporterPairingTags := array:
             pairing_a_tag{}
             pairing_b_tag{}
+            pairing_c_tag{}
+            pairing_d_tag{}
         TagAndNames := array:
             (yacht_poi_tag{}, "The Boat")
             (motel_poi_tag{}, "Coastal Motel")
@@ -80,6 +96,7 @@ rr_config_duos<public> := class(rr_abstract_config):
             (crash_poi_tag{}, "Crash Landing")
             (weeping_poi_tag{}, "Log Cabins")
 
+    
     Rounds<override>:rr_rounds_config = rr_rounds_config:
         SupplyDropTimesAndQuantities<override>:= array:
             (10.0, 2)
@@ -95,9 +112,9 @@ rr_config_duos<public> := class(rr_abstract_config):
             round_storm_3_device_tag{}
 
     Scoring<override>:rr_score_config = rr_score_config:
-        Anchor<override>:=vector2{X := 1.0, Y := 0.0}
-        Alignment<override>:=vector2{X := 1.0, Y := 0.0}
-        Offset<override>:=vector2{X := -15.0, Y := 405.0}
+        Anchor<override>:=vector2{X := 0.0, Y := 0.0}
+        Alignment<override>:=vector2{X := 0.0, Y := 0.0}
+        Offset<override>:=vector2{X := 15.0, Y := 405.0}
     
         CrownImage<override>:=RR_UI.TeamScoring.T_AboveTexture
         ScoreBlockImage<override>:=RR_UI.TeamScoring.T_ScoreBlock
@@ -134,7 +151,7 @@ rr_config_duos<public> := class(rr_abstract_config):
         MaximumScoreSlots<override>:= 4
         WipedColorMultiplier<override>:=0.025
         ShowOwnerAtMinimum<override>:=true
-        ShowPlayerCount<override>:=true
+        ShowPlayerCount<override>:=false
 
     LoadoutTags<override> : []rr_loadout_selector_tags = array:
         loadout_1_tag{}
@@ -143,5 +160,3 @@ rr_config_duos<public> := class(rr_abstract_config):
         loadout_4_tag{}
         loadout_5_tag{}
         loadout_6_tag{}
-
-
