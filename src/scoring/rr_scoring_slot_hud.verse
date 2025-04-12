@@ -43,18 +43,21 @@ BuildScoreSlot(InAgent:agent, Config:rr_score_config, Leader:logic, ?OptionalSna
                 Widget := ScoreText
                 Padding := Config.ScoreTextPadding
     CrownTexture.SetVisibility(Leader? and widget_visibility.Visible or widget_visibility.Hidden)
+    EncompassingWidget := stack_box:
+        Orientation := orientation.Vertical
+        Slots := array:
+            stack_box_slot:
+                Widget := CrownTexture
+                Padding := Config.CrownPadding
+            stack_box_slot:
+                Widget := ScoreOverlay
+            stack_box_slot:
+                Widget := ContextBlock.EncompassingWidget
+                Padding := margin{Top := Config.ContextBlockPadding}
+    if(not OptionalSnapshot? or OptionalSnapshot?.Agents.Length < 1):
+        EncompassingWidget.Collapse()
     rr_scoring_slot:
-        EncompassingWidget := stack_box:
-            Orientation := orientation.Vertical
-            Slots := array:
-                stack_box_slot:
-                    Widget := CrownTexture
-                    Padding := Config.CrownPadding
-                stack_box_slot:
-                    Widget := ScoreOverlay
-                stack_box_slot:
-                    Widget := ContextBlock.EncompassingWidget
-                    Padding := margin{Top := Config.ContextBlockPadding}
+        EncompassingWidget := EncompassingWidget
         CrownTexture := CrownTexture
         ScoreText := ScoreText
         ScoreBlockTexture := ScoreBlockTexture

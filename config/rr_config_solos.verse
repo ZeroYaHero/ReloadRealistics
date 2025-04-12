@@ -17,42 +17,42 @@ rr_config_solos<public> := class(rr_abstract_config):
         DefaultTeamSelectTimerDuration<public> := -1.0
         PlayableTeams<override> := array:
             rr_team_config:
-                Index := 1
+                Index := 0
                 Name := "Blue"
                 Color := NamedColors.Blue
-                Tag := false
+                Tag := option{team_one_tag{}}
             rr_team_config:
-                Index := 2
+                Index := 1
                 Name := "Red"
                 Color := NamedColors.Red
-                Tag := false
+                Tag := option{team_two_tag{}}
             rr_team_config:
-                Index := 3
+                Index := 2
                 Name := "Green"
                 Color := NamedColors.LimeGreen
-                Tag := false
+                Tag := option{team_three_tag{}}
             rr_team_config:
-                Index := 4
+                Index := 3
                 Name := "Yellow"
                 Color := NamedColors.Yellow
-                Tag := false
+                Tag := option{team_four_tag{}}
             rr_team_config:
-                Index := 5
+                Index := 4
                 Name := "Purple"
                 Color := NamedColors.Purple
                 Tag := false
             rr_team_config:
-                Index := 6
+                Index := 5
                 Name := "Orange"
                 Color := NamedColors.Orange
                 Tag := false
             rr_team_config:
-                Index := 7
+                Index := 6
                 Name := "Cyan"
                 Color := NamedColors.Cyan
                 Tag := false
             rr_team_config:
-                Index := 8
+                Index := 7
                 Name := "Pink"
                 Color := NamedColors.Pink
                 Tag := false
@@ -70,13 +70,13 @@ rr_config_solos<public> := class(rr_abstract_config):
         RebootDurationCycles<override> := array:
             (1.0, 15.0)
             (3.0, 30.0)
-            (5.0, 45.0)
-            (7.0, 60.0)
+            (4.0, 45.0)
+            (5.0, 60.0)
         RebootBankTags<override> := array:
             reboot_bank_1_tag{}
             reboot_bank_2_tag{}
             reboot_bank_3_tag{}
-            reboot_bank_4_tag{}
+        RebootNoBankTag<override> := option{reboot_no_bank_tag{}}
 
     POIs<override>:rr_pois_config = rr_pois_config:
         TeleporterPairingTags := array:
@@ -96,7 +96,6 @@ rr_config_solos<public> := class(rr_abstract_config):
             (crash_poi_tag{}, "Crash Landing")
             (weeping_poi_tag{}, "Log Cabins")
 
-    
     Rounds<override>:rr_rounds_config = rr_rounds_config:
         SupplyDropTimesAndQuantities<override>:= array:
             (10.0, 2)
@@ -114,7 +113,7 @@ rr_config_solos<public> := class(rr_abstract_config):
     Scoring<override>:rr_score_config = rr_score_config:
         Anchor<override>:=vector2{X := 0.0, Y := 0.0}
         Alignment<override>:=vector2{X := 0.0, Y := 0.0}
-        Offset<override>:=vector2{X := 15.0, Y := 405.0}
+        Offset<override>:=vector2{X := 15.0, Y := 120.0}
     
         CrownImage<override>:=RR_UI.TeamScoring.T_AboveTexture
         ScoreBlockImage<override>:=RR_UI.TeamScoring.T_ScoreBlock

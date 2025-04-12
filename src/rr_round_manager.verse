@@ -14,9 +14,11 @@ rr_round_manager := class(fn_gameplay_round_manager):
     # Objects
     ScoreController:rr_scoring_controller
     Rebooter:rr_rebooter
+    ParticipantManager:rr_participant_manager
     LoadoutSelector:rr_loadout_selector
     TeamCollection:fort_team_collection
     PlayableTeams:[]rr_team_config
+    TeamCapacity:int
     EliminationManagerDevice:elimination_manager_device
     POIs:[]rr_poi
     # Devices
@@ -25,19 +27,14 @@ rr_round_manager := class(fn_gameplay_round_manager):
     StormBeacons:[]advanced_storm_beacon_device
     SupplyDropSpawners:[]supply_drop_spawner_device
     Config:rr_rounds_config
-    # StormRanges:[]tuple(float, float)
-    # InitialStormPhaseRadiusCM:float
-    # SupplyDropTimesAndQuantities:[]tuple(float, int)
     BarrierTimerHUD:hud_message_timer
     RoundPOIHUD:hud_message_device
     POIBarrier:barrier_device
     BarrierSFX:audio_player_device
-    # Parameters
     # Variables
     var TotalTeamRoundScores:[int]int = map{}
     var AgentScoreMap:[agent]int = map{}
     var CurrentRoundParticipants:[]agent = array{}
-    # var CurrentRoundTeamIndexes:[]int = array{}
     var RoundCancelables:[]cancelable = array{}
 
     HasNextRound<override>()<transacts><decides>:void =
@@ -47,7 +44,7 @@ rr_round_manager := class(fn_gameplay_round_manager):
     OnRoundSetup<override>()<suspends>:void =
         set CurrentRoundParticipants = for:
             PlayableTeam:PlayableTeams
-            TeamMembers := TeamCollection._GetTeamMembers[PlayableTeam.Index]
+            TeamMembers := ParticipantManager.GetInitializedOf(TeamCollection._GetTeamMembers[PlayableTeam.Index])
             TeamMember:TeamMembers
         do:
             TeamMember
@@ -80,12 +77,15 @@ rr_round_manager := class(fn_gameplay_round_manager):
                 set LastPosition = NewPosition
             POI.Initialize()
             AwaitTimer(1.0)
+
             Pairs := for:
                 PlayableTeam:PlayableTeams
-                TeamMembers := TeamCollection._GetTeamMembers[PlayableTeam.Index]
+                TeamMembers := ParticipantManager.GetInitializedOf(TeamCollection._GetTeamMembers[PlayableTeam.Index])
             do:
                 TeamMembers
-            POI.TeleportPairs(Pairs) # TODO
+
+            POI.TeleportPairs(Pairs)
+            ScoreController.RefreshView()
             for(SupplyDropSpawner : SupplyDropSpawners):
                 set RoundCancelables += array:
                     SupplyDropSpawner.OpenedEvent.Subscribe(OnSupplyDropOpen)
@@ -94,6 +94,7 @@ rr_round_manager := class(fn_gameplay_round_manager):
     # Setup Participants
     SetupParticipants():void =
         for(Participant:CurrentRoundParticipants):
+            GiveOneSpawn(Participant)
             GrantHealthShield(Participant)
             GrantLoadout(Participant)
             Rebooter.Register(Participant)
@@ -142,7 +143,10 @@ rr_round_manager := class(fn_gameplay_round_manager):
             do:
                 TeamIndex
 
-            if(TeamIndexesAlive.Length < 2):
+            if:
+                TeamIndexesAlive.Length < 2
+                TeamCapacity <> 1 or not Rebooter.RebootsInProgress[]
+            then:
                 for(Participant:CurrentRoundParticipants):
                     if(TeamCollection._GetTeamMembers[TeamIndexesAlive[0]].Find[Participant]):
                         ScoreController.OnRoundWin(Participant)

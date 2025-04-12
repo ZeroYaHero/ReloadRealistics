@@ -12,12 +12,12 @@ rr_transition_state_handler<public> := class(fn_gameplay_state_triggerable, fn_g
     GetStateToTrigger<override>():comparable =
         if(NotAnyRoundsLeft[]):
             return rr_state_enum.RematchRequeue
-        if(OnlyOneTeam[]):
-            return rr_state_enum.OpponentsLeft
         if(Solos[]):
             for(NeutralizedAgent:TeamSelector.GetNeutralizedAgents()):
                 TeamSelector.AutoSelectTeam(NeutralizedAgent)
             return rr_state_enum.CombatRound
+        if(OnlyOneTeam[]):
+            return rr_state_enum.OpponentsLeft
         return rr_state_enum.TeamSelect
 
     NotAnyRoundsLeft()<transacts><decides>:void = 

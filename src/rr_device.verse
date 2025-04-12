@@ -30,7 +30,7 @@ rr_device := class(creative_device):
         TeamSelector := BuildTeamSelector(ParticipantManager)
         Rebooter := BuildReloadRebooter()
         ScoreController := BuildScoreController(ParticipantManager, TeamSelector)
-        RoundManager := BuildRoundManager(ScoreController, Rebooter)
+        RoundManager := BuildRoundManager(ParticipantManager, ScoreController, Rebooter)
         HubManager := BuildHubManager(ParticipantManager)
         ChestManager := BuildChestManager()
 
@@ -39,6 +39,8 @@ rr_device := class(creative_device):
         StateMachine.AddStateHandler(BuildTransitionStateHandler(ParticipantManager, TeamSelector, RoundManager))
         StateMachine.AddStateHandler(BuildCombatRoundStateHandler(RoundManager, ScoreController))
         StateMachine.AddStateHandler(BuildEndStateHandler(ParticipantManager, HubManager, ScoreController))
+
+        StateMachine.AddStateObserver(ParticipantManager)
         
         if(Configurations.Teams.TeamCapacity > 1):
             ParticipantManager.ParticipantInitializedEvent().SubscribeAwaitable(TeamSelector.Neutralize)
@@ -170,11 +172,14 @@ rr_device := class(creative_device):
                 RebootBankHUDMessage := GetTaggedObjects(RebootBankTag, hud_message_device)[0]
             do:
                 RebootBankHUDMessage
-
+            NoRebootBank := option{GetTaggedObjects(Configurations.Reboot.RebootNoBankTag?, hud_message_device)[0]}
+            OvershieldHalfSelector := GetFirstTagged(reboot_50_over_tag{}, class_and_team_selector_device)
+            OvershieldFullSelector := GetFirstTagged(reboot_100_over_tag{}, class_and_team_selector_device)
 
     BuildScoreController<internal>(ParticipantManager:rr_participant_manager, TeamSelector:rr_team_selector):rr_scoring_controller =
         rr_scoring_controller:
-            TeamIndexConfigMap := Configurations.Teams.PlayableTeams.GetTeamIndexConfigMap()
+            TeamIndexConfigMap := Dict of for(SelectableTeamConfig : Configurations.Teams.PlayableTeams):
+                (SelectableTeamConfig.Index, SelectableTeamConfig)
             TeamCollection := GetPlayspace().GetTeamCollection()
             View := rr_scoring_view:
                 Config := Configurations.Scoring
@@ -183,9 +188,11 @@ rr_device := class(creative_device):
                 RoundWinHUD := GetFirstTagged(win_round_hud_tag{}, hud_message_device)
                 RoundLoseHUD := GetFirstTagged(lose_round_hud_tag{}, hud_message_device)
 
-    BuildRoundManager<internal>(ScoreController : rr_scoring_controller, Rebooter : rr_rebooter):rr_round_manager =
+    BuildRoundManager<internal>(ParticipantManager:rr_participant_manager, ScoreController : rr_scoring_controller, Rebooter : rr_rebooter):rr_round_manager =
         rr_round_manager:
+            TeamCapacity := Configurations.Teams.TeamCapacity
             Config := Configurations.Rounds
+            ParticipantManager := ParticipantManager
             TeamCollection := GetPlayspace().GetTeamCollection()
             PlayableTeams := Configurations.Teams.PlayableTeams
             ScoreController := ScoreController

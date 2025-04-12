@@ -36,11 +36,7 @@ rr_team_config<public> := class:
     Color<public>:color
     Name<public>:string
     Tag<public>:?selectable_teams_tag
-
-(SelectableTeamConfigs : []rr_team_config).GetTeamIndexConfigMap<public>()<transacts>:[int]rr_team_config = 
-    Dict of for(SelectableTeamConfig : SelectableTeamConfigs):
-        (SelectableTeamConfig.Index, SelectableTeamConfig)
-
+    
 rr_pois_config<public> := struct:
     TeleporterPairingTags<public>:[]rr_poi_pairing_tags
     TagAndNames:[]tuple(rr_poi_tags, string)
@@ -57,6 +53,7 @@ rr_reboot_config<public> := struct:
     RebootDurationCycles:[]tuple(float, float)
     WipeMessage<localizes>:message
     RebootBankTags:[]reboot_bank_tag
+    RebootNoBankTag:?reboot_bank_tag
 
 rr_score_config<public> := struct:
     Anchor:vector2

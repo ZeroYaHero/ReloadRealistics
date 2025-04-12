@@ -1,4 +1,5 @@
 using { /UnrealEngine.com/Temporary/SpatialMath }
+using { /Fortnite.com/FortPlayerUtilities }
 using { /Fortnite.com/Characters }
 using { /Verse.org/Concurrency }
 using { /Fortnite.com/Devices }
@@ -9,6 +10,8 @@ using { /Verse.org/Random }
 
 using { FN_Gameplay }
 using { config }
+
+# TODO: Reboot bank should be its own "module"
 
 rr_rebooter := class:
     Config:rr_reboot_config
@@ -38,7 +41,11 @@ rr_rebooter := class:
     RebootTimer:hud_message_timer
     RebootItemGranter:item_granter_device
     RebootMessageFeed:elimination_feed_device
-    RebootBanks:[]hud_message_device = array{}
+    RebootBanks:[]hud_message_device
+    NoRebootBank:?hud_message_device
+
+    OvershieldHalfSelector:class_and_team_selector_device
+    OvershieldFullSelector:class_and_team_selector_device
 
     HoldToRebootInputTrigger:input_trigger_device
     HoldToRebootUI:hud_message_device
@@ -58,6 +65,8 @@ rr_rebooter := class:
     var <private>Allowed<private>:logic = false
     var <private>HoldToRebootCountMap<private>:[agent]int = map{}
     var <private>AgentAwaitEliminationTaskMap<private>:[agent]?cancelable_sticky_task = map{}
+    var <private>BeingRebooted<private>:[]agent = array{}
+    var <private>BeingRespawned<private>:[]agent = array{}
 
     # Enable the Rebooting / Cycles
     Enable<public>():void =
@@ -68,6 +77,14 @@ rr_rebooter := class:
         set Enabled = false
         DisabledEvent.Signal()
         DisallowReboots()
+        for:
+            Agent->CancelableStickyTask:AgentAwaitEliminationTaskMap
+            Cancelable := CancelableStickyTask?
+        do:
+            Cancelable.Cancel()
+        set AgentAwaitEliminationTaskMap = map{}
+        set BeingRebooted = array{}
+        set BeingRespawned = array{}
         HideRebootsEndingHUD()
         HideDisallowRebootsHUD()
         RebootTimer.StopAll()
@@ -93,18 +110,17 @@ rr_rebooter := class:
         set Allowed = false
         DisallowedEvent.Signal()
 
-        for:
-            RegisteredAgent:RegisteredAgents
-            RebootBankHUDMessage:RebootBanks
-        do:
-            RebootBankHUDMessage.Hide(RegisteredAgent)
-
-        for:
-            Agent->CancelableStickyTask:AgentAwaitEliminationTaskMap
-            Cancelable := CancelableStickyTask?
-        do:
-            Cancelable.Cancel()
-        set AgentAwaitEliminationTaskMap = map{}
+        for(RegisteredAgent:RegisteredAgents):
+            for(RebootBankHUDMessage:RebootBanks):
+                RebootBankHUDMessage.Hide(RegisteredAgent)
+            if(CurrentRebootBankIndex := GetRebootBankIndex[RegisteredAgent]):
+                RebootsLeft := RebootBanks.Length - CurrentRebootBankIndex
+                if(RebootsLeft = 1):
+                    OvershieldHalfSelector.ChangeClass(RegisteredAgent)
+                else if(RebootsLeft > 1):
+                    OvershieldFullSelector.ChangeClass(RegisteredAgent)
+                else:
+                    GiveOneSpawn(RegisteredAgent)
 
         HideAllowedRebootsHUD()
         HideRebootBank()
@@ -128,7 +144,6 @@ rr_rebooter := class:
         if(not IsRegistered[InAgent]):
             RebootsEndingTimerTickSFX.Register(InAgent)
             RebootsEndingUrgentTimerTickSFX.Register(InAgent)
-            UpdateRebootBank(InAgent)
             if:
                 IsAllowed[]
                 not AgentAwaitEliminationTaskMap[InAgent]?
@@ -161,6 +176,8 @@ rr_rebooter := class:
 
     # Checks if the agent has Teammates alive OR if there is still reboots in the bank
     IsRebootable<public>(InAgent:agent)<transacts><decides>:void =
+        IsAllowed[]
+        IsRegistered[InAgent]
         not IsWiped[InAgent] or HasRebootBank[InAgent]
 
     # Force Reboot
@@ -181,6 +198,10 @@ rr_rebooter := class:
     SetDefaultRebootLocation<public>(InLocation:vector3):void =
         set DefaultRebootLocation = InLocation
 
+    RebootsInProgress<public>()<transacts><decides>:void =
+        IsEnabled[]
+        BeingRebooted.Length > 0
+
     # ---------------------------------------------------------------------------------------------
     
     # Start the Reboot Cycle (Private & Suspending)
@@ -199,6 +220,7 @@ rr_rebooter := class:
     AwaitAgentElimination<private>(InAgent:agent):void =
         if(CurrentTask := AgentAwaitEliminationTaskMap[InAgent]?):
             CurrentTask.Cancel()
+        ResetRebootBank(InAgent)
         CancelableStickyTask := CancelableSpawnParam(_AwaitAgentElimination, InAgent)
         if { set AgentAwaitEliminationTaskMap[InAgent] = option{CancelableStickyTask} }
 
@@ -207,17 +229,12 @@ rr_rebooter := class:
             if(FortCharacter := InAgent.GetFortCharacter[]):
                 EliminationResult := FortCharacter.EliminatedEvent().Await()
                 if { set LastLocationMap[InAgent] = FortCharacter.GetTransform() }
-                if:
-                    IsAllowed[]
-                    IsRegistered[InAgent]
-                then:
-                    if(IsRebootable[InAgent]):
-                        UpdateRebootBank(InAgent)
-                        RebootOnTimerSuccess(InAgent)
-                    else:
-                        Wipe(InAgent, ?MaybeEliminatingCharacter:=EliminationResult.EliminatingCharacter)
-                        return
+                if(IsRebootable[InAgent]):
+                    set BeingRebooted = BeingRebooted.SetAdd(InAgent)
+                    IncrementRebootBank(InAgent)
+                    RebootOnTimerSuccess(InAgent)
                 else:
+                    Wipe(InAgent, ?MaybeEliminatingCharacter:=EliminationResult.EliminatingCharacter)
                     return
             else:
                 return
@@ -226,12 +243,7 @@ rr_rebooter := class:
     AwaitAgentDowns<private>()<suspends>:void =
         loop:
             DownedAgent := DBNODevice.AgentDownedEvent.Await()
-            Print("Agent Downed")
-            if:
-                IsAllowed[]
-                IsRegistered[DownedAgent]
-                IsRebootable[DownedAgent]
-            then:
+            if(IsRebootable[DownedAgent]):
                 spawn{CancelOnAwaitableParam(ShowHoldToReboot, DownedAgent, DisallowedEvent)}
 
     # Allowed Reboots HUD
@@ -261,8 +273,6 @@ rr_rebooter := class:
         RebootsEndingHUDTimerCenter.StopAll()
         RebootsEndingHUDTimerCorner.StopAll()
 
-    # Disallowed Reboots HUD
-
     ShowDisallowRebootsHUD<private>()<suspends>:void =
         for(RegisteredAgent : RegisteredAgents):
             DisallowedHUDCenter.Show(RegisteredAgent)
@@ -275,49 +285,61 @@ rr_rebooter := class:
     HideDisallowRebootsHUD<private>():void =
         DisallowedHUDCorner.Hide()
 
-    # Reboot Bank Logic
-    UpdateRebootBank<private>(InAgent:agent):void =
-        CurrentRebootBankIndex := GetRebootBankIndex[InAgent] or -1
-        SetRebootBankIndex(InAgent, CurrentRebootBankIndex + 1)
-        ShowRebootBankHUD(InAgent)
+    ResetRebootBank<private>(InAgent:agent):void =
+        SetRebootBankIndex(InAgent, 0)
+
+    IncrementRebootBank<private>(InAgent:agent):void =
+        if(CurrentRebootBankIndex := GetRebootBankIndex[InAgent]):
+            SetRebootBankIndex(InAgent, CurrentRebootBankIndex + 1)
+        else:
+            SetRebootBankIndex(InAgent, 0)
 
     GetRebootBankIndex<private>(InAgent:agent)<transacts><decides>:int =
         RebootBankIndexMap[InAgent]
 
     SetRebootBankIndex<private>(InAgent:agent, Index:int):void =
         if { set RebootBankIndexMap[InAgent]  = Index }
+        Print("Setting Reboot Bank Index to {Index} for Agent")
+        HideRebootBank(InAgent)
+        if(RebootBankHUDMessage := RebootBanks[GetRebootBankIndex[InAgent]]):
+            Print("Valid Reboot Bank Index, Giving Infinite Spawn")
+            RebootBankHUDMessage.Show(InAgent)
+            GiveInfiniteSpawn(InAgent)
+        else:
+            Print("Invalid Reboot Bank Index, Showing/Giving No Respawns Left")
+            if(NoRebootBankHUD := NoRebootBank?):
+                NoRebootBankHUD.Show(InAgent)
+            GiveOneSpawn(InAgent)
 
     HasRebootBank<private>(InAgent:agent)<transacts><decides>:void =
         RebootBanks[GetRebootBankIndex[InAgent]]
 
-    ShowRebootBankHUD<private>(InAgent:agent):void =
-        if(RebootBankHUDMessage := RebootBanks[GetRebootBankIndex[InAgent]]):
-            RebootBankHUDMessage.Show(InAgent)
-        else:
-            HideRebootBank(InAgent)
-
     HideRebootBank<private>():void =
-        for(RebootBankHUDMessage : RebootBanks):
-            RebootBankHUDMessage.Hide()
+        for(RegisteredAgent:RegisteredAgents):
+            HideRebootBank(RegisteredAgent)
 
     HideRebootBank<private>(InAgent:agent):void =
+        if(NoRebootBankHUD := NoRebootBank?):
+            NoRebootBankHUD.Hide(InAgent)
         for(RebootBankHUDMessage : RebootBanks):
             RebootBankHUDMessage.Hide(InAgent)
 
     # Wiped Logic
     IsWiped<private>(InAgent:agent)<transacts><decides>:void =
         for:
-            Teammate : TeamCollection._GetUpTeammates[InAgent]
+            Teammate:TeamCollection._GetTeammates[InAgent]
+            IsUp[Teammate] or BeingRespawned.Find[InAgent]
             IsRegistered[Teammate]
         do:
             Fail[]
 
     Wipe<private>(InAgent:agent, ?MaybeEliminatingCharacter:?fort_character = false):void =
+        set BeingRebooted = BeingRebooted.SetRemove(InAgent)
         if(Eliminator := MaybeEliminatingCharacter?.GetAgent[]):
             WipeHUD.Show(Eliminator, Config.WipeMessage)
             WipeSFX.Play(Eliminator)
             AwardXP(Eliminator, rr_award.Wipe)
-            for(Teammate : TeamCollection._GetTeammates[Eliminator]):
+            for(Teammate:TeamCollection._GetTeammates[Eliminator]):
                 if(IsUp[Teammate]):
                     WipeHUD.Show(Teammate, Config.WipeMessage)
                     WipeSFX.Play(Teammate)
@@ -326,7 +348,6 @@ rr_rebooter := class:
                 _WipeEvent.Signal(option{WiperIndex})
         else:
             _WipeEvent.Signal(false)
-
 
     ShowHoldToReboot<private>(InAgent:agent)<suspends>:void =
         defer:
@@ -391,6 +412,7 @@ rr_rebooter := class:
 
     # Respawn Logic
     SkyRespawnRift<private>(InAgent : agent, InTeleporterDevice : teleporter_device)<suspends>:void =
+        set BeingRespawned = BeingRespawned.SetAdd(InAgent)
         RebootTransform := if:
         # Spawn Above Teammate
             UpTeammates := TeamCollection._GetUpTeammates[InAgent]
@@ -415,8 +437,19 @@ rr_rebooter := class:
                 Scale := v3(1)
         sync:
             SpawnDeleteRebootRift(RebootTransform, InTeleporterDevice)
-            InAgent.RespawnAt(RebootTransform).Await()
+            RespawnAgent(InAgent, RebootTransform)
             SkyTeleport(InAgent, InTeleporterDevice)
+
+    RespawnAgent<private>(InAgent:agent, RebootTransform:transform)<suspends>:void =
+        InAgent.Respawn(RebootTransform.Translation, RebootTransform.Rotation)
+        GiveInfiniteRespawn(InAgent)
+        Sleep(0.2)
+        InAgent.Respawn(RebootTransform.Translation, RebootTransform.Rotation)
+        set BeingRespawned = BeingRespawned.SetRemove(InAgent)
+        Sleep(3.0)
+        if(not HasRebootBank[InAgent]):
+            GiveOneSpawn(InAgent)
+        set BeingRebooted = BeingRebooted.SetRemove(InAgent)
 
     SkyTeleport<private>(InAgent:agent, InTeleporterDevice:teleporter_device)<suspends>:void =
         Sleep(0.2)
@@ -477,7 +510,6 @@ rr_rebooter := class:
                 KnockResult := TeamCauseKnockEvent.Await()
                 if(InAgent.IsConnected[]):
                     if(IsRegistered[KnockResult.Target]):
-                        # Print("Showing Down Time Skip to " + AgentMessage(InAgent) + "on Team {TeamIndex}", ?Duration:=7.0)
                         TimeSkipHUD.Show(InAgent, rr_rebooter_messages.EnemyDownedMessage(Int[Config.DownTimeSkip] or 0))
                         RebootTimer.SetActiveDuration(InAgent, RebootTimer.GetActiveDuration(InAgent) - Config.DownTimeSkip)
                 else:
@@ -492,7 +524,6 @@ rr_rebooter := class:
                 EliminationResult := TeamCauseEliminationEvent.Await()
                 if(InAgent.IsConnected[]):
                     if(IsRegistered[EliminationResult.Target]):
-                        # Print("Showing Elimination Time Skip to " + AgentMessage(InAgent) + "on Team {TeamIndex}", ?Duration:=7.0)
                         TimeSkipHUD.Show(InAgent, rr_rebooter_messages.EnemyEliminatedMessage(Int[Config.EliminationTimeSkip] or 0))
                         RebootTimer.SetActiveDuration(InAgent, RebootTimer.GetActiveDuration(InAgent) - Config.EliminationTimeSkip)
                 else:
@@ -504,7 +535,6 @@ rr_rebooter := class:
                 WipeIndex := _WipeEvent.Await()
                 if(InAgent.IsConnected[]):
                     if(WipeIndex = TeamIndex):
-                        # Print("Showing Team Wipe Time Skip to " + AgentMessage(InAgent) + "on Team {TeamIndex}", ?Duration:=7.0)
                         TimeSkipHUD.Show(InAgent, rr_rebooter_messages.WipedMessage(Int[Config.WipeTimeSkip] or 0))
                         RebootTimer.SetActiveDuration(InAgent, RebootTimer.GetActiveDuration(InAgent) - Config.WipeTimeSkip)
                 else:

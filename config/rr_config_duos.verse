@@ -63,6 +63,7 @@ rr_config_duos<public> := class(rr_abstract_config):
             (5.0, 45.0)
             (7.0, 60.0)
         RebootBankTags<override> := array{}
+        RebootNoBankTag<override> := false
 
     POIs<override>:rr_pois_config = rr_pois_config:
         TeleporterPairingTags := array:

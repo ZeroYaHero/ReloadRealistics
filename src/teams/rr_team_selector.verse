@@ -34,7 +34,6 @@ rr_team_selector<public> := class:
     Neutralize<public>(InAgent:agent):void =
         if(TeamCollection._SetTeam[InAgent, NeutralizedIndex]):
             set NeutralizedAgents = NeutralizedAgents.SetAdd(InAgent)
-            NeutralizedSFXDevice.Play(InAgent)
             _NeutralizedEvent.Signal(InAgent)
             if:
                 CurrentPlayerReferenceDevice := AgentPlayerReferenceDeviceMap[InAgent]?
@@ -60,7 +59,6 @@ rr_team_selector<public> := class:
         else if(TeamCollection.IsOnTeam[InAgent, Index]):
             true
         else:
-            HUDMessageDevice.Show(InAgent, FailedToSelectTeamMessage, ?DisplayTime:=2.5)
             false
 
     TeamSelectedEvent<public>():awaitable(agent) = 
@@ -185,11 +183,14 @@ rr_team_selector<public> := class:
             loop:
                 EnteredAgent := InSelectableTeam.MutatorZoneDevice.AgentEntersEvent.Await()
                 if(not SelectableTeamHiddenMap[InSelectableTeam.Index]?):
-                    SelectTeam(EnteredAgent, InSelectableTeam.Index)
+                    Selected := SelectTeam(EnteredAgent, InSelectableTeam.Index)
+                    if(not Selected?):
+                        HUDMessageDevice.Show(EnteredAgent, FailedToSelectTeamMessage, ?DisplayTime:=2.5)
             loop:
                 ExitedAgent := InSelectableTeam.MutatorZoneDevice.AgentExitsEvent.Await()
                 if(not SelectableTeamHiddenMap[InSelectableTeam.Index]?):
                     Neutralize(ExitedAgent)
+                    NeutralizedSFXDevice.Play(ExitedAgent)
 
 SelectedTeamMessage<localizes><public>(TeamName:string):message = "Joined Team {TeamName}"
 NeutralizedMessage<localizes><public>:message = "No Team!\nSelect a team or wait for auto selection."
