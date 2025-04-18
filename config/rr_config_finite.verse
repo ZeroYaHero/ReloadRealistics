@@ -5,7 +5,9 @@ using { /Verse.org/Colors }
 
 using { src }
 
-rr_config_solos<public> := class(rr_abstract_config):
+# TODO:
+rr_config_finite := class(rr_abstract_config):
+
     AutoStartMinimum<override> : int = 2
 
     Teams<override>:rr_teams_config = rr_teams_config:

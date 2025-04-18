@@ -119,8 +119,8 @@ rr_rebooter := class:
                     OvershieldHalfSelector.ChangeClass(RegisteredAgent)
                 else if(RebootsLeft > 1):
                     OvershieldFullSelector.ChangeClass(RegisteredAgent)
-                else:
-                    GiveOneSpawn(RegisteredAgent)
+                # else:
+                #     GiveOneSpawn(RegisteredAgent)
 
         HideAllowedRebootsHUD()
         HideRebootBank()
@@ -234,6 +234,7 @@ rr_rebooter := class:
                     IncrementRebootBank(InAgent)
                     RebootOnTimerSuccess(InAgent)
                 else:
+                    GiveOneSpawn(InAgent)
                     Wipe(InAgent, ?MaybeEliminatingCharacter:=EliminationResult.EliminatingCharacter)
                     return
             else:
@@ -309,7 +310,6 @@ rr_rebooter := class:
             Print("Invalid Reboot Bank Index, Showing/Giving No Respawns Left")
             if(NoRebootBankHUD := NoRebootBank?):
                 NoRebootBankHUD.Show(InAgent)
-            GiveOneSpawn(InAgent)
 
     HasRebootBank<private>(InAgent:agent)<transacts><decides>:void =
         RebootBanks[GetRebootBankIndex[InAgent]]
@@ -447,8 +447,9 @@ rr_rebooter := class:
         InAgent.Respawn(RebootTransform.Translation, RebootTransform.Rotation)
         set BeingRespawned = BeingRespawned.SetRemove(InAgent)
         Sleep(3.0)
-        if(not HasRebootBank[InAgent]):
-            GiveOneSpawn(InAgent)
+        if(FortCharacter := InAgent.GetFortCharacter[]):
+            FortCharacter.SetHealth(Config.RebootHealth)
+            FortCharacter.SetShield(Config.RebootShield)
         set BeingRebooted = BeingRebooted.SetRemove(InAgent)
 
     SkyTeleport<private>(InAgent:agent, InTeleporterDevice:teleporter_device)<suspends>:void =
