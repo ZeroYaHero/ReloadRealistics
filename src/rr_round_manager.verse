@@ -130,29 +130,35 @@ rr_round_manager := class(fn_gameplay_round_manager):
 
     # Check the Round End Condition Repeatedly
     CheckRoundEndCondition<override>()<suspends>:void =
-        loop:
-            race:
-                AwaitTimer(1.0)
-                EliminationManagerDevice.EliminatedEvent.Await()
-            ScoreController.RefreshView()
+        var AgentsLeft:[]agent = array{}
+        race:
+            loop:
+                set AgentsLeft += array{ParticipantManager.ParticipantExitEvent().Await()}
+            loop:
+                race:
+                    AwaitTimer(1.0)
+                    EliminationManagerDevice.EliminatedEvent.Await()
+                ScoreController.RefreshView()
 
-            TeamIndexesAlive := Set of for:
-                CurrentRoundParticipant:CurrentRoundParticipants
-                IsUp[CurrentRoundParticipant]
-                TeamIndex := TeamCollection._GetTeamIndex[CurrentRoundParticipant]
-            do:
-                TeamIndex
+                for(AgentLeft:AgentsLeft):
+                    Rebooter.Unregister(AgentLeft)
+                set AgentsLeft = array{}
 
-            if:
-                TeamIndexesAlive.Length < 2
-                TeamCapacity <> 1 or not Rebooter.RebootsInProgress[]
-            then:
-                for(Participant:CurrentRoundParticipants):
-                    if(TeamCollection._GetTeamMembers[TeamIndexesAlive[0]].Find[Participant]):
-                        ScoreController.OnRoundWin(Participant)
-                    else:
-                        ScoreController.OnRoundLose(Participant)
-                return
+                TeamIndexesAlive := Set of for:
+                    CurrentRoundParticipant:CurrentRoundParticipants
+                    IsUp[CurrentRoundParticipant]
+                    TeamIndex := TeamCollection._GetTeamIndex[CurrentRoundParticipant]
+                do:
+                    TeamIndex
+
+                if(TeamIndexesAlive.Length < 2):
+                    if(TeamCapacity <> 1 or not Rebooter.RebootsInProgress[]):
+                        for(Participant:CurrentRoundParticipants):
+                            if(TeamCollection._GetTeamMembers[TeamIndexesAlive[0]].Find[Participant]):
+                                ScoreController.OnRoundWin(Participant)
+                            else:
+                                ScoreController.OnRoundLose(Participant)
+                        return
 
     # Spawn Supply Drops around Center Point
     SpawnSupplyDrops<private>()<suspends>:void =

@@ -3,10 +3,12 @@ using { /Fortnite.com/Teams }
 
 using { FN_Gameplay }
 using { teams }
+using { config }
 
 rr_transition_state_handler<public> := class(fn_gameplay_state_triggerable, fn_gameplay_state_handler):
     ParticipantManager<public>:rr_participant_manager
     TeamSelector<public>:rr_team_selector
+    TeamConfig<public>:rr_teams_config
     RoundManager<public>:rr_round_manager
 
     GetStateToTrigger<override>():comparable =
@@ -33,6 +35,7 @@ rr_transition_state_handler<public> := class(fn_gameplay_state_triggerable, fn_g
                 set TeamWithPlayers = true
 
     Solos()<transacts><decides>:void =
+        ParticipantManager.GetInitializedParticipants().Length > 1
         TeamSelector.GetSelectableTeamCapacity() = 1 or ParticipantManager.GetInitializedParticipants().Length < 3
 
     GetStateListenersMap<override>()<transacts>:[comparable][]fn_gameplay_state_listenable =

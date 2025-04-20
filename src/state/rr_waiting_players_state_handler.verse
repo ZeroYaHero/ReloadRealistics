@@ -21,8 +21,11 @@ rr_waiting_players_state_handler<public> := class(fn_gameplay_state_handler):
         var InitializedParticipantsCount : int = InitializedParticipants.Length
         ParticipantManager.GetInitializedParticipants().TeleportToOrRespawnAt(HubManager.SpawnTeleporters)
         if(InitializedParticipantsCount < 2):
-            HUDMessageDevice.Show(OnePlayerMessage)
+            for(InitializedParticipant:InitializedParticipants):
+                HUDMessageDevice.Show(InitializedParticipant, OnePlayerMessage)
             ParticipantManager.ParticipantInitializedEvent().Await()
+            for(InitializedParticipant:InitializedParticipants):
+                HUDMessageDevice.Hide(InitializedParticipant)
             HUDMessageDevice.Hide()
         set InitializedParticipants = ParticipantManager.GetInitializedParticipants() 
         set InitializedParticipantsCount = InitializedParticipants.Length

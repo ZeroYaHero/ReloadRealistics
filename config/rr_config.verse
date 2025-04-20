@@ -54,6 +54,8 @@ rr_reboot_config<public> := struct:
     WipeMessage<localizes>:message
     RebootBankTags:[]reboot_bank_tag
     RebootNoBankTag:?reboot_bank_tag
+    RebootHealth:float
+    RebootShield:float
 
 rr_score_config<public> := struct:
     Anchor:vector2
@@ -93,4 +95,4 @@ rr_score_config<public> := struct:
     ShowOwnerAtMinimum:logic
     
 EnemyTeamWipedMessage<localizes><public>:message = "ENEMY TEAM WIPED"
-EnemyWipedMessage<localizes><public>:message = "ENEMY WIPED"
+EnemyWipedMessage<localizes><public>:message = "ENEMY PLAYER WIPED"
