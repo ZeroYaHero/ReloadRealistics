@@ -2,52 +2,58 @@ using { /UnrealEngine.com/Temporary/SpatialMath }
 using { /Fortnite.com/Characters }
 using { /Fortnite.com/Devices }
 using { /Verse.org/Simulation }
+using { /Fortnite.com/Teams }
 using { /Verse.org/Random }
 
 using { FN_Gameplay }
+using { scoring }
+using { teams }
+using { config }
 
-rr_round_manager := class(fn_gameplay_round_manager, fn_gameplay_state_triggerable, rr_state_handler_interface):
+rr_round_manager := class(fn_gameplay_round_manager):
     # Objects
-    ScoreModel:rr_score_model
-    RebootManager:rr_reboot_manager
+    ScoreController:rr_scoring_controller
+    Rebooter:rr_rebooter
+    ParticipantManager:rr_participant_manager
     LoadoutSelector:rr_loadout_selector
-    TeamSelector:rr_team_selector
+    TeamCollection:fort_team_collection
+    PlayableTeams:[]rr_team_config
+    TeamCapacity:int
+    EliminationManagerDevice:elimination_manager_device
     POIs:[]rr_poi
     # Devices
+    DBNODevice:down_but_not_out_device
     StormDevice:storm_controller_device
     StormBeacons:[]advanced_storm_beacon_device
-    StormRanges:[]tuple(float, float)
-    BarrierTimerHUD:custom_hud_timer
     SupplyDropSpawners:[]supply_drop_spawner_device
-    # Parameters
-    InitialStormPhaseRadiusCM:float
-    SupplyDropTimesAndQuantities:[]tuple(float, int)
+    Config:rr_rounds_config
+    BarrierTimerHUD:hud_message_timer
+    RoundPOIHUD:hud_message_device
+    POIBarrier:barrier_device
+    BarrierSFX:audio_player_device
     # Variables
     var TotalTeamRoundScores:[int]int = map{}
     var AgentScoreMap:[agent]int = map{}
     var CurrentRoundParticipants:[]agent = array{}
-    var CurrentRoundTeamIndexes:[]int = array{}
+    var RoundCancelables:[]cancelable = array{}
 
-    EnterCombatRound<override>()<suspends>:void =
-        StartRound()
-        AwaitRoundCleaned()
+    HasNextRound<override>()<transacts><decides>:void =
+        POIs[RoundNumber]
 
     # Round Setup
     OnRoundSetup<override>()<suspends>:void =
-        set CurrentRoundParticipants = Concatenate(TeamSelector.GetSelectableTeamMembersMap().Values())
-        set CurrentRoundTeamIndexes = TeamSelector.GetSelectableTeamMembersMap().Keys()
-        SetupTeams()
+        set CurrentRoundParticipants = for:
+            PlayableTeam:PlayableTeams
+            TeamMembers := ParticipantManager.GetInitializedOf(TeamCollection._GetTeamMembers[PlayableTeam.Index])
+            TeamMember:TeamMembers
+        do:
+            TeamMember
         SetupPOI()
         AwaitTimer(1.0)
+        Rebooter.Enable()
         SetupParticipants()
-        RebootManager.SetDefaultRebootLocation(POIs[RoundNumber].GetCenter().Translation or vector3{})
-        RebootManager.EnableReboots()
-        BarrierTimerHUD.StartAndAwaitSuccess()
-
-    # Setup Teams
-    SetupTeams<private>():void =
-        for(TeamIndex : CurrentRoundTeamIndexes):
-            InitializeTeamCauseCombatEvents(TeamIndex)
+        Rebooter.SetDefaultRebootLocation(POIs[RoundNumber].GetCenter().Translation or vector3{})
+        BarrierTimerHUD.StartAndAwaitSuccessAll()
 
     # Setup POI
     SetupPOI()<suspends>:void =
@@ -55,33 +61,51 @@ rr_round_manager := class(fn_gameplay_round_manager, fn_gameplay_state_triggerab
             POI := POIs[RoundNumber]
             StormDevice.TeleportTo[POI.GetCenter()]
             StormBeacons[0].TeleportTo[POI.GetCenter()]
+            POIBarrier.TeleportTo[POI.GetCenter().TransZ(-1024.0)]
         then:
+            for(Participant : CurrentRoundParticipants):
+                RoundPOIHUD.Show(Participant, RoundPOIMessage(RoundNumber + 1, POI.Name))
             var LastPosition:vector3 = POI.GetCenter().Translation
             for:
                 Index -> StormBeacon : StormBeacons
                 Index > 0
-                StormRange := StormRanges[Index - 1]
+                StormRange := Config.StormRanges[Index - 1]
                 RandomRotation := MakeRotationFromYawPitchRollDegrees(GetRandomFloat(0.0, 360.0), 0.0, 0.0)
                 NewPosition := RandomRotation.GetLocalForward() * GetRandomFloat(StormRange(0), StormRange(1)) + LastPosition
                 StormBeacon.TeleportTo[NewPosition, IdentityRotation()]
             do:
                 set LastPosition = NewPosition
             POI.Initialize()
-            POI.TeleportTeams(TeamSelector.GetSelectableTeamMembersMap().Values())
+            AwaitTimer(1.0)
+
+            Pairs := for:
+                PlayableTeam:PlayableTeams
+                TeamMembers := ParticipantManager.GetInitializedOf(TeamCollection._GetTeamMembers[PlayableTeam.Index])
+            do:
+                TeamMembers
+
+            POI.TeleportPairs(Pairs)
+            ScoreController.RefreshView()
             for(SupplyDropSpawner : SupplyDropSpawners):
-                spawn{AwaitSupplyDropOpen(SupplyDropSpawner)}
+                set RoundCancelables += array:
+                    SupplyDropSpawner.OpenedEvent.Subscribe(OnSupplyDropOpen)
             StormDevice.GenerateStorm()
 
     # Setup Participants
     SetupParticipants():void =
-        for(Participant : CurrentRoundParticipants):
+        for(Participant:CurrentRoundParticipants):
+            GiveOneSpawn(Participant)
             GrantHealthShield(Participant)
             GrantLoadout(Participant)
+            Rebooter.Register(Participant)
+            if(TeamIndex := TeamCollection._GetTeamIndex[Participant]):
+                InitializeTeamCauseCombatEvents(TeamIndex)
 
     # Grant Health and Shield to InAgent
     GrantHealthShield<private>(InAgent : agent):void =
-        Revive(InAgent)
+        DBNODevice.Revive(InAgent)
         if(FortCharacter := InAgent.GetFortCharacter[]):
+            FortCharacter.SetVulnerability(true)
             FortCharacter.SetHealth(100.0)
             FortCharacter.SetShield(100.0)
 
@@ -94,57 +118,59 @@ rr_round_manager := class(fn_gameplay_round_manager, fn_gameplay_state_triggerab
 
     # Round Begin
     OnRoundBegin<override>()<suspends>:void =
+        for(CurrentRoundParticipant:CurrentRoundParticipants):
+            BarrierSFX.Play(CurrentRoundParticipant)
+        Rebooter.StartRebootCycle()
         LoadoutSelector.HideUI()
         if(POI := POIs[RoundNumber]):
             POI.DisableBarriers()
-        # Await Round End
         branch:
-            sync:
-                RebootManager.AwaitReboots(CurrentRoundParticipants)
-                SpawnSupplyDrops()
+            SpawnSupplyDrops() # TODO: Change to cancelable spawns
         CheckRoundEndCondition()
 
     # Check the Round End Condition Repeatedly
     CheckRoundEndCondition<override>()<suspends>:void =
-        # TeamCollection := GetMainDevicePlayspace().GetTeamCollection()
-        TeamCollection := TeamSelector.TeamCollection
-        loop:
-            race:
-                AwaitTimer(1.0)
-                RebootManager.TeamWipeEvent.Await()
+        var AgentsLeft:[]agent = array{}
+        race:
+            loop:
+                set AgentsLeft += array{ParticipantManager.ParticipantExitEvent().Await()}
+            loop:
+                race:
+                    AwaitTimer(1.0)
+                    EliminationManagerDevice.EliminatedEvent.Await()
+                ScoreController.RefreshView()
 
-            TeamIndexesAlive := Set of for:
-                CurrentRoundParticipant : CurrentRoundParticipants
-                IsUp[CurrentRoundParticipant]
-                TeamIndex := TeamCollection._GetTeamIndex[CurrentRoundParticipant]
-            do:
-                TeamIndex
-            # One or less participating teams alive
-            if(TeamIndexesAlive.Length < 2):
-                # Round Winning Members
-                if(RoundWinningMembers := TeamCollection._GetTeamMembers[TeamIndexesAlive[0]]):
-                    ScoreModel.RoundWin(RoundWinningMembers)
-                    for:
-                        Participant : GetMainDevicePlayspace().GetParticipants()
-                        not RoundWinningMembers.Find[Participant]
-                    do:
-                        ScoreModel.RoundLose(Participant)
-                # All Teams Dead
-                else:
-                    ScoreModel.RoundLose(GetMainDevicePlayspace().GetParticipants())
-                break
+                for(AgentLeft:AgentsLeft):
+                    Rebooter.Unregister(AgentLeft)
+                set AgentsLeft = array{}
+
+                TeamIndexesAlive := Set of for:
+                    CurrentRoundParticipant:CurrentRoundParticipants
+                    IsUp[CurrentRoundParticipant]
+                    TeamIndex := TeamCollection._GetTeamIndex[CurrentRoundParticipant]
+                do:
+                    TeamIndex
+
+                if(TeamIndexesAlive.Length < 2):
+                    if(TeamCapacity <> 1 or not Rebooter.RebootsInProgress[]):
+                        for(Participant:CurrentRoundParticipants):
+                            if(TeamCollection._GetTeamMembers[TeamIndexesAlive[0]].Find[Participant]):
+                                ScoreController.OnRoundWin(Participant)
+                            else:
+                                ScoreController.OnRoundLose(Participant)
+                        return
 
     # Spawn Supply Drops around Center Point
     SpawnSupplyDrops<private>()<suspends>:void =
         var SupplyDropIndex : int = 0
-        for(TimeAndQuantity : SupplyDropTimesAndQuantities):
+        for(TimeAndQuantity : Config.SupplyDropTimesAndQuantities):
             AwaitTimer(TimeAndQuantity(0))
             for:
                 I := 0..TimeAndQuantity(1) - 1
                 SupplyDrop := SupplyDropSpawners[SupplyDropIndex]
                 RandomYaw := GetRandomFloat(0.0, 360.0)
                 RandomRotation := MakeRotationFromYawPitchRollDegrees(RandomYaw, 0.0, 0.0)
-                RandomDistance := GetRandomFloat(0.0, InitialStormPhaseRadiusCM)
+                RandomDistance := GetRandomFloat(0.0, Config.InitialStormPhaseRadiusCM)
                 POICenter := POIs[RoundNumber].GetCenter().Translation
                 SupplyDropV3 := RandomRotation.GetLocalForward() * RandomDistance + POICenter
                 SupplyDrop.TeleportTo[SupplyDropV3, IdentityRotation()]
@@ -152,36 +178,30 @@ rr_round_manager := class(fn_gameplay_round_manager, fn_gameplay_state_triggerab
                 SupplyDrop.Spawn()
                 set SupplyDropIndex += 1
 
-    AwaitSupplyDropOpen<private>(SupplyDropSpawner : supply_drop_spawner_device)<suspends>:void =
-        branch:
-            loop:
-                OpenedAgent := SupplyDropSpawner.OpenedEvent.Await()
-                AwardXP(OpenedAgent, rr_award.OpenSupplyDrop)
-        AwaitRoundEnd()
+    OnSupplyDropOpen<private>(InAgent:agent):void =
+        AwardXP(InAgent, rr_award.OpenSupplyDrop)
 
     # Round End
     OnRoundEnd<override>()<suspends>:void = 
-        RebootManager.DisableReboots(?RoundEnding := true)
-        if(RandomAgent := GetMainDevicePlayspace().GetRandomParticipant[]):
+        Rebooter.Disable()
+        Rebooter.UnregisterAll()
+        StormDevice.DestroyStorm()
+        for:
+            Participant : CurrentRoundParticipants
+            FortCharacter := Participant.GetFortCharacter[]
+        do:
+            DBNODevice.Revive(Participant)
+            FortCharacter.SetVulnerability(false)
+        AwaitTimer(3.0)
+        if(RandomAgent := CurrentRoundParticipants[GetRandomInt(0, CurrentRoundParticipants.Length - 1)]):
             for(SupplyDropSpawner : SupplyDropSpawners):
                 SupplyDropSpawner.Open(RandomAgent)
-        StormDevice.DestroyStorm()
-        for(Participant : CurrentRoundParticipants):
+        for(RoundCancelable:RoundCancelables):
+            RoundCancelable.Cancel()
+        set RoundCancelables = array{}
+        for(Participant:CurrentRoundParticipants):
             LoadoutSelector.ClearLoadout(Participant)
-            Revive(Participant) # TODO!: Just make their health controlled here instead of modifying it in the team state
+            GrantHealthShield(Participant)
         set CurrentRoundParticipants = array{}
-        Print("Round Number Updated")
 
-    GetStateToTrigger<override>()<transacts>:comparable =
-        Print("Deciding On Team Select and Rematch Requeue")
-        if(POI := POIs[RoundNumber]):
-            rr_state_enum.TeamSelect
-        else:
-            rr_state_enum.RematchRequeue
-
-    GetStateListenersMap<override>()<transacts>:[comparable][]fn_gameplay_state_listenable =
-        map:
-            rr_state_enum.CombatRound => array:
-                fn_gameplay_state_listener:
-                    EnterCallback := option{EnterCombatRound}
-                    PostExecutionTrigger := option{Self}
+RoundPOIMessage<localizes><public>(RoundNumber:int, POIName:string):message = "Round {RoundNumber}:\n{POIName}"

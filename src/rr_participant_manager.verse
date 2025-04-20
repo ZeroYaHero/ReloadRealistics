@@ -3,19 +3,14 @@ using { /Fortnite.com/Devices }
 using { /Verse.org/Simulation }
 
 using { FN_Gameplay }
+using { state }
 
 rr_participant_manager := class(fn_gameplay_participant_manager, fn_gameplay_state_observer):
-
     var CurrentState:comparable = comparable()
-    MiddleOfRoundHUD:hud_message_device
+    HUDMessageDevice:hud_message_device
 
-    EnumMap : [comparable]rr_state_enum = map:
-        rr_state_enum.WaitingForPlayers =>  rr_state_enum.WaitingForPlayers
-        rr_state_enum.TeamSelect        =>  rr_state_enum.TeamSelect
-        rr_state_enum.CombatRound       =>  rr_state_enum.CombatRound
-        rr_state_enum.RematchRequeue    =>  rr_state_enum.RematchRequeue
-        rr_state_enum.OpponentsLeft     =>  rr_state_enum.OpponentsLeft
-        rr_state_enum.GameEnd           =>  rr_state_enum.GameEnd
+    OnParticipantEntry<override>(InAgent:agent):void =
+        (super:)OnParticipantEntry(InAgent)
 
     _InitializeParticipant<override>(InAgent : agent)<suspends>:void =
         if:
@@ -28,24 +23,55 @@ rr_participant_manager := class(fn_gameplay_participant_manager, fn_gameplay_sta
                 AwaitServerTick()
         FortCharacter := InAgent.GetFortCharacter[] or InAgent.GetFortCharacterSuspends()
         InitializeCauseCombatEvents(InAgent, FortCharacter)
+        spawn{AwaitAndAwardCombatEvents(InAgent)}
 
         set InitializedParticipants = InitializedParticipants.SetAdd(InAgent)
         OnParticipantInitialized(InAgent)
-        ParticipantInitializedEvent.Signal(InAgent)
+        _ParticipantInitializedEvent.Signal(InAgent)
+
+    AwaitAndAwardCombatEvents<private>(InAgent:agent)<suspends>:void =
+        branch:
+            sync:
+                AwaitAndAwardDown(InAgent)
+                AwaitAndAwardElimination(InAgent)
+        ParticipantExitEvent().AwaitPayloadEqual(InAgent)
+
+    AwaitAndAwardDown<private>(InAgent:agent)<suspends>:void =
+        loop:
+            if(CauseDownEvent := GetCauseDownEvent[InAgent]):
+                CauseDownEvent.Await()
+                AwardXP(InAgent, rr_award.Knock)
+            else:
+                Sleep(1.0)
+
+    AwaitAndAwardElimination<private>(InAgent:agent)<suspends>:void =
+        loop:
+            if(CauseEliminationEvent := GetCauseEliminationEvent[InAgent]):
+                CauseEliminationEvent.Await()
+                AwardXP(InAgent, rr_award.Elimination)
+            else:
+                Sleep(1.0)
 
     OnParticipantInitialized<override>(InAgent : agent):void =
-        if(CurrentEnum := EnumMap[CurrentState]):
+        Print("ON PARTICIPANT INITIALIZED")
+        if(CurrentEnum := ComparableEnumRRStateMap[CurrentState]):
+            Print("GOT CURRENT ENUM FROM COMPARABLE ENUM MAP")
             case(CurrentEnum):
-                # rr_state_enum.WaitingForPlayers => InAgent.EliminateCharacter()
-                # rr_state_enum.TeamSelect => void
                 rr_state_enum.CombatRound =>
-                    MiddleOfRoundHUD.Show(InAgent)
+                    Print("JOINED DURING COMBAT ROUND")
+                    HUDMessageDevice.Show(InAgent, MiddleOfRoundMessage(InAgent), ?DisplayTime := 3.0)
                     GiveOneSpawn(InAgent) 
                     spawn{RepeatAttemptEliminateCharacter(InAgent)}
-                # rr_state_enum.RematchRequeue => InAgent.EliminateCharacter()
-                # rr_state_enum.OpponentsLeft => InAgent.EliminateCharacter()
-                # rr_state_enum.GameEnd => InAgent.EliminateCharacter()
                 _ =>
 
-    UpdateState<override>(InState : comparable)<transacts>:void =
+    UpdateState<override>(InState:comparable)<transacts>:void =
         set CurrentState = InState
+
+    GetInitializedOf<public>(InAgents:[]agent)<transacts>:[]agent =
+        for:
+            InAgent:InAgents
+            InitializedParticipants.Find[InAgent]
+        do:
+            InAgent
+
+MiddleOfRoundMessage<localizes><public>(InAgent:agent):message = "Welcome {InAgent}!\nYou joined in the middle of a round!"

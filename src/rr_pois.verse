@@ -6,26 +6,14 @@ using { /Verse.org/Random }
 
 using { FN_Gameplay }
 
-var GlobalCurrentPOI : weak_map(session, rr_poi) = map{}
-
-GetCurrentPOI<public>()<transacts><decides>:rr_poi =
-    GlobalCurrentPOI[GetSession()]
-
-SetCurrentPOI<internal>(InPOI : rr_poi)<transacts><decides>:void =
-    set GlobalCurrentPOI[GetSession()] = InPOI
-
-rr_positions := class:
-    Lobby : []teleporter_device
-    TeamSelect : []teleporter_device
-
 rr_poi<public> := class:
 
+    Name<public>:string
     TeamPairings<public> : []tuple([]teleporter_device, []teleporter_device)
     Barriers<public> : []barrier_device
     CenterPositionProp<public> : creative_prop
 
     Initialize():void =
-        if { SetCurrentPOI[Self] }
         EnableBarriers()
 
     GetCenter()<transacts>:transform =
@@ -39,7 +27,7 @@ rr_poi<public> := class:
         for(Barrier : Barriers):
             Barrier.Enable()
 
-    TeleportTeams(Agents2D : [][]agent)<suspends>:void =
+    TeleportPairs(Agents2D : [][]agent)<suspends>:void =
         var StickyTasks : []sticky_task = array{}
         if(PairCount := Ceil(Agents2D.Length / 2)):
             var Index : int = 0
