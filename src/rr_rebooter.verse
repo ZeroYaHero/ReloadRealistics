@@ -64,7 +64,7 @@ rr_rebooter := class:
     var <private>Enabled<private>:logic = false
     var <private>Allowed<private>:logic = false
     var <private>HoldToRebootCountMap<private>:[agent]int = map{}
-    var <private>AgentAwaitEliminationTaskMap<private>:[agent]?cancelable_sticky_task = map{}
+    var <private>AgentCancelableTaskMap<private>:[agent][]cancelable_sticky_task = map{}
     var <private>BeingRebooted<private>:[]agent = array{}
     var <private>BeingRespawned<private>:[]agent = array{}
 
@@ -78,11 +78,11 @@ rr_rebooter := class:
         DisabledEvent.Signal()
         DisallowReboots()
         for:
-            Agent->CancelableStickyTask:AgentAwaitEliminationTaskMap
-            Cancelable := CancelableStickyTask?
+            Agent->CancelableStickyTasks:AgentCancelableTaskMap
+            CancelableStickyTask : CancelableStickyTasks
         do:
-            Cancelable.Cancel()
-        set AgentAwaitEliminationTaskMap = map{}
+            CancelableStickyTask.Cancel()
+        set AgentCancelableTaskMap = map{}
         set BeingRebooted = array{}
         set BeingRespawned = array{}
         HideRebootsEndingHUD()
@@ -97,10 +97,7 @@ rr_rebooter := class:
     AllowReboots<public>():void =
         if(IsEnabled[]):
             set Allowed = true
-            for:
-                RegisteredAgent:RegisteredAgents
-                not AgentAwaitEliminationTaskMap[RegisteredAgent]?
-            do:
+            for(RegisteredAgent:RegisteredAgents):
                 AwaitAgentElimination(RegisteredAgent)
             spawn{CancelOnAwaitable(AwaitAgentDowns, DisallowedEvent)}
             ShowAllowedRebootsHUD()
@@ -119,8 +116,6 @@ rr_rebooter := class:
                     OvershieldHalfSelector.ChangeClass(RegisteredAgent)
                 else if(RebootsLeft > 1):
                     OvershieldFullSelector.ChangeClass(RegisteredAgent)
-                # else:
-                #     GiveOneSpawn(RegisteredAgent)
 
         HideAllowedRebootsHUD()
         HideRebootBank()
@@ -144,10 +139,7 @@ rr_rebooter := class:
         if(not IsRegistered[InAgent]):
             RebootsEndingTimerTickSFX.Register(InAgent)
             RebootsEndingUrgentTimerTickSFX.Register(InAgent)
-            if:
-                IsAllowed[]
-                not AgentAwaitEliminationTaskMap[InAgent]?
-            then:
+            if(IsAllowed[]):
                 AwaitAgentElimination(InAgent)
             if(TeamIndex := TeamCollection._GetTeamIndex[InAgent]):
                 InitializeTeamCauseCombatEvents(TeamIndex)
@@ -156,19 +148,18 @@ rr_rebooter := class:
     # Unregister this Agent for Reboot Events
     Unregister<public>(InAgent:agent):void =
         set RegisteredAgents = RegisteredAgents.SetRemove(InAgent)
+        set BeingRebooted = BeingRebooted.SetRemove(InAgent)
+        set BeingRespawned = BeingRespawned.SetRemove(InAgent)
         RebootsEndingTimerTickSFX.Unregister(InAgent)
         RebootsEndingUrgentTimerTickSFX.Unregister(InAgent)
-        if:
-            CancelableStickyTask := AgentAwaitEliminationTaskMap[InAgent]?
-            set AgentAwaitEliminationTaskMap[InAgent] = false
-        then:
+        for(CancelableStickyTask:AgentCancelableTaskMap[InAgent]):
             CancelableStickyTask.Cancel()
+        if { set AgentCancelableTaskMap[InAgent] = array{} }
 
+    # Unregister all Agent
     UnregisterAll<public>():void =
         for(RegisteredAgent:RegisteredAgents):
-            RebootsEndingTimerTickSFX.Unregister(RegisteredAgent)
-            RebootsEndingUrgentTimerTickSFX.Unregister(RegisteredAgent)
-        set RegisteredAgents = array{}
+            Unregister(RegisteredAgent)
 
     # Verify the Agent is Registered
     IsRegistered<public>(InAgent:agent)<transacts><decides>:void =
@@ -177,8 +168,13 @@ rr_rebooter := class:
     # Checks if the agent has Teammates alive OR if there is still reboots in the bank
     IsRebootable<public>(InAgent:agent)<transacts><decides>:void =
         IsAllowed[]
+        Print("Is Allowed")
         IsRegistered[InAgent]
+        Print("Is Registered")
         not IsWiped[InAgent] or HasRebootBank[InAgent]
+        Print("Is Not Wiped or Has Reboot Banks")
+        InAgent.IsConnected[]
+        Print("Is Connected")
 
     # Force Reboot
     Reboot<public>(InAgent:agent):void =
@@ -201,6 +197,7 @@ rr_rebooter := class:
     RebootsInProgress<public>()<transacts><decides>:void =
         IsEnabled[]
         BeingRebooted.Length > 0
+        Print("There are agents being rebooted!")
 
     # ---------------------------------------------------------------------------------------------
     
@@ -218,16 +215,16 @@ rr_rebooter := class:
         DisallowReboots()
 
     AwaitAgentElimination<private>(InAgent:agent):void =
-        if(CurrentTask := AgentAwaitEliminationTaskMap[InAgent]?):
-            CurrentTask.Cancel()
-        ResetRebootBank(InAgent)
-        CancelableStickyTask := CancelableSpawnParam(_AwaitAgentElimination, InAgent)
-        if { set AgentAwaitEliminationTaskMap[InAgent] = option{CancelableStickyTask} }
+        if(not AgentCancelableTaskMap[InAgent] or AgentCancelableTaskMap[InAgent].Length < 1):
+            ResetRebootBank(InAgent)
+            AwaitEliminationTask := CancelableSpawnParam(_AwaitAgentElimination, InAgent)
+            if { set AgentCancelableTaskMap[InAgent] += array{AwaitEliminationTask} }
 
     _AwaitAgentElimination<private>(InAgent:agent)<suspends>:void =
         loop:
             if(FortCharacter := InAgent.GetFortCharacter[]):
                 EliminationResult := FortCharacter.EliminatedEvent().Await()
+                Print("Agent died")
                 if { set LastLocationMap[InAgent] = FortCharacter.GetTransform() }
                 if(IsRebootable[InAgent]):
                     set BeingRebooted = BeingRebooted.SetAdd(InAgent)
@@ -312,7 +309,10 @@ rr_rebooter := class:
                 NoRebootBankHUD.Show(InAgent)
 
     HasRebootBank<private>(InAgent:agent)<transacts><decides>:void =
+        Print("Checking Reboot Bank")
         RebootBanks[GetRebootBankIndex[InAgent]]
+        Print("Reboot Bank is good")
+        
 
     HideRebootBank<private>():void =
         for(RegisteredAgent:RegisteredAgents):
@@ -445,11 +445,11 @@ rr_rebooter := class:
         GiveInfiniteRespawn(InAgent)
         Sleep(0.2)
         InAgent.Respawn(RebootTransform.Translation, RebootTransform.Rotation)
-        set BeingRespawned = BeingRespawned.SetRemove(InAgent)
-        Sleep(3.0)
         if(FortCharacter := InAgent.GetFortCharacter[]):
             FortCharacter.SetHealth(Config.RebootHealth)
             FortCharacter.SetShield(Config.RebootShield)
+        set BeingRespawned = BeingRespawned.SetRemove(InAgent)
+        Sleep(3.0)
         set BeingRebooted = BeingRebooted.SetRemove(InAgent)
 
     SkyTeleport<private>(InAgent:agent, InTeleporterDevice:teleporter_device)<suspends>:void =

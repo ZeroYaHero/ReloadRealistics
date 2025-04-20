@@ -78,6 +78,7 @@ rr_device := class(creative_device):
     BuildTransitionStateHandler<internal>(ParticipantManager:rr_participant_manager, TeamSelector:rr_team_selector, RoundManager:rr_round_manager):rr_transition_state_handler =
         rr_transition_state_handler:
             ParticipantManager := ParticipantManager
+            TeamConfig := Configurations.Teams
             TeamSelector := TeamSelector
             RoundManager := RoundManager
 
