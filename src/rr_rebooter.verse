@@ -64,7 +64,7 @@ rr_rebooter := class:
     var <private>Enabled<private>:logic = false
     var <private>Allowed<private>:logic = false
     var <private>HoldToRebootCountMap<private>:[agent]int = map{}
-    var <private>AgentCancelableTaskMap<private>:[agent][]cancelable_sticky_task = map{}
+    var <private>AgentCancelableTaskMap<private>:[agent]?cancelable_sticky_task = map{}
     var <private>BeingRebooted<private>:[]agent = array{}
     var <private>BeingRespawned<private>:[]agent = array{}
 
@@ -78,8 +78,8 @@ rr_rebooter := class:
         DisabledEvent.Signal()
         DisallowReboots()
         for:
-            Agent->CancelableStickyTasks:AgentCancelableTaskMap
-            CancelableStickyTask : CancelableStickyTasks
+            MaybeCancelableStickyTask:AgentCancelableTaskMap
+            CancelableStickyTask := MaybeCancelableStickyTask?
         do:
             CancelableStickyTask.Cancel()
         set AgentCancelableTaskMap = map{}
@@ -152,14 +152,20 @@ rr_rebooter := class:
         set BeingRespawned = BeingRespawned.SetRemove(InAgent)
         RebootsEndingTimerTickSFX.Unregister(InAgent)
         RebootsEndingUrgentTimerTickSFX.Unregister(InAgent)
-        for(CancelableStickyTask:AgentCancelableTaskMap[InAgent]):
+        if:
+            CancelableStickyTask := AgentCancelableTaskMap[InAgent]?
+            set AgentCancelableTaskMap[InAgent] = false
+        then:
             CancelableStickyTask.Cancel()
-        if { set AgentCancelableTaskMap[InAgent] = array{} }
 
     # Unregister all Agent
     UnregisterAll<public>():void =
         for(RegisteredAgent:RegisteredAgents):
             Unregister(RegisteredAgent)
+        set RegisteredAgents = array{}
+        set BeingRebooted = array{}
+        set BeingRespawned = array{}
+        set AgentCancelableTaskMap = map{}
 
     # Verify the Agent is Registered
     IsRegistered<public>(InAgent:agent)<transacts><decides>:void =
@@ -215,10 +221,10 @@ rr_rebooter := class:
         DisallowReboots()
 
     AwaitAgentElimination<private>(InAgent:agent):void =
-        if(not AgentCancelableTaskMap[InAgent] or AgentCancelableTaskMap[InAgent].Length < 1):
+        if(not AgentCancelableTaskMap[InAgent]):
             ResetRebootBank(InAgent)
             AwaitEliminationTask := CancelableSpawnParam(_AwaitAgentElimination, InAgent)
-            if { set AgentCancelableTaskMap[InAgent] += array{AwaitEliminationTask} }
+            if { set AgentCancelableTaskMap[InAgent] = option{AwaitEliminationTask} }
 
     _AwaitAgentElimination<private>(InAgent:agent)<suspends>:void =
         loop:
