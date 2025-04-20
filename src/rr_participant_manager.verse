@@ -12,9 +12,6 @@ rr_participant_manager := class(fn_gameplay_participant_manager, fn_gameplay_sta
     OnParticipantEntry<override>(InAgent:agent):void =
         (super:)OnParticipantEntry(InAgent)
 
-    OnParticipantAlreadyInitialized<override>(InAgent:agent):void =
-        HUDMessageDevice.Hide(InAgent)
-
     _InitializeParticipant<override>(InAgent : agent)<suspends>:void =
         if:
             Player := player[InAgent]

@@ -22,7 +22,8 @@ rr_waiting_players_state_handler<public> := class(fn_gameplay_state_handler):
         ParticipantManager.GetInitializedParticipants().TeleportToOrRespawnAt(HubManager.SpawnTeleporters)
         if(InitializedParticipantsCount < 2):
             for(InitializedParticipant:InitializedParticipants):
-                HUDMessageDevice.Show(InitializedParticipant, OnePlayerMessage)
+                HUDMessageDevice.Show(InitializedParticipant, OnePlayerMessage, ?DisplayTime := 0.0)
+                Print("Showed the Waiting for Players HUD")
             ParticipantManager.ParticipantInitializedEvent().Await()
             for(InitializedParticipant:InitializedParticipants):
                 HUDMessageDevice.Hide(InitializedParticipant)
