@@ -67,11 +67,4 @@ rr_participant_manager := class(fn_gameplay_participant_manager, fn_gameplay_sta
     UpdateState<override>(InState:comparable)<transacts>:void =
         set CurrentState = InState
 
-    GetInitializedOf<public>(InAgents:[]agent)<transacts>:[]agent =
-        for:
-            InAgent:InAgents
-            InitializedParticipants.Find[InAgent]
-        do:
-            InAgent
-
 MiddleOfRoundMessage<localizes><public>(InAgent:agent):message = "Welcome {InAgent}!\nYou joined in the middle of a round!"
