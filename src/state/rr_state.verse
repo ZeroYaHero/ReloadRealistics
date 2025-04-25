@@ -36,6 +36,7 @@ ComparableEnumRRStateMap<public>:[comparable]rr_state_enum = map:
         PostExecutionTrigger := option:
             fn_gameplay_state_trigger:
                 DefaultStateToTrigger := StateToTrigger
+
 timer_listener_wrapper := class:
     TimerDevice : timer_device
 

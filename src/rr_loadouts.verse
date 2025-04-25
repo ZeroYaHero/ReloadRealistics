@@ -44,8 +44,6 @@ rr_loadout_selector := class:
                     set KeepSelection[AgentIndex(0)] = true
                 else if:
                     set KeepSelection[AgentIndex(0)] = false
-                else:
-                    PrintAndErr("Unreachable")
 
     ShowUI(InAgent : agent):void =
         WeaponSelectDialog.Show(InAgent)
@@ -79,8 +77,6 @@ rr_loadout_selector := class:
                     RandomGranter.CycleToRandomItem(InAgent)
             if(Manual? and not KeepSelection[InAgent]):
                 KeepSelectDialog.Show(InAgent)
-        else:
-            PrintAndErr("Loadout Selected Does Not Exist!")
         if(LoadoutSubmissionType := LoadoutSubmissionTypes[Index]):
             SubmitData(InAgent, LoadoutSubmissionType)
         set CurrentlyBeingGrantedItems = CurrentlyBeingGrantedItems.RemoveAllElements(InAgent)

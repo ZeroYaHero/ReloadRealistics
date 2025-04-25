@@ -177,8 +177,8 @@ rr_rebooter := class:
         Print("Is Allowed")
         IsRegistered[InAgent]
         Print("Is Registered")
-        not IsWiped[InAgent] or HasRebootBank[InAgent]
-        Print("Is Not Wiped or Has Reboot Banks")
+        # not IsWiped[InAgent] or HasRebootBank[InAgent]
+        # Print("Is Not Wiped or Has Reboot Banks")
         InAgent.IsConnected[]
         Print("Is Connected")
 
@@ -233,12 +233,16 @@ rr_rebooter := class:
                 Print("Agent died")
                 if { set LastLocationMap[InAgent] = FortCharacter.GetTransform() }
                 if(IsRebootable[InAgent]):
-                    set BeingRebooted = BeingRebooted.SetAdd(InAgent)
-                    IncrementRebootBank(InAgent)
-                    RebootOnTimerSuccess(InAgent)
+                    if(not IsWiped[InAgent]):
+                        set BeingRebooted = BeingRebooted.SetAdd(InAgent)
+                        IncrementRebootBank(InAgent)
+                        RebootOnTimerSuccess(InAgent)
+                    else:
+                        GiveOneSpawn(InAgent)
+                        Wipe(InAgent, ?MaybeEliminatingCharacter:=EliminationResult.EliminatingCharacter)
+                        return
                 else:
                     GiveOneSpawn(InAgent)
-                    Wipe(InAgent, ?MaybeEliminatingCharacter:=EliminationResult.EliminatingCharacter)
                     return
             else:
                 return
@@ -476,10 +480,11 @@ rr_rebooter := class:
 
     # Reboot Timer Logic
     RebootOnTimerSuccess<private>(InAgent:agent)<suspends>:void =
-        Rebootable := AwaitRebootTimer(InAgent)
+        TimerResult := AwaitRebootTimer(InAgent)
         if:
-            Rebootable?
+            TimerResult?
             IsEnabled[]
+            not IsWiped[InAgent]
             NextTeleporter := RiftTeleporterDevices[Mod[RiftTeleporterIndex, 8]]
         then:
             set RiftTeleporterIndex += 1
@@ -494,11 +499,19 @@ rr_rebooter := class:
         then:
             RebootTimer.SetMaxDuration(InAgent, TimeToReboot)
             RebootTimer.Start(InAgent)
-            branch:
-                AwaitTeamTimeSkips(InAgent)
-            RebootTimer.SuccessEvent().AwaitPayloadEqual(option{InAgent})
-            Print("Branch Executed")
-            true
+            race:
+                block:
+                    AwaitTeamTimeSkips(InAgent)
+                    false
+                block:
+                    RebootTimer.SuccessEvent().AwaitPayloadEqual(option{InAgent})
+                    true
+                if(TeamIndex := TeamCollection._GetTeamIndex[InAgent]):
+                    _WipeEvent.AwaitPayloadEqual(option{TeamIndex})
+                    false
+                else:
+                    Sleep(Inf)
+                    true
         else:
             false
 

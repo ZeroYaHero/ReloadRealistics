@@ -35,14 +35,15 @@ rr_team_select_state_handler<public> := class(fn_gameplay_state_handler):
         var TeamsWithMultipleMembersSet:[]int = array{}
         for:
             TeamIndex -> TeamMembers:TeamSelector.GetSelectableTeamIndexMembersMap()
+            InitializedTeamMembers := ParticipantManager.GetInitializedOf(TeamMembers)
             SelectableTeam := TeamSelector.GetSelectableTeam[TeamIndex]
         do:
-            if(TeamMembers.Length >= TeamSelector.MinimumTeamSizeForKeepSelect):
+            if(InitializedTeamMembers.Length >= TeamSelector.MinimumTeamSizeForKeepSelect):
                 TeamSelector.ShowAndEnableSelectableTeam(SelectableTeam)
                 set TeamsWithMultipleMembersSet = TeamsWithMultipleMembersSet.SetAdd(TeamIndex)
             else:
                 TeamSelector.HideAndDisableSelectableTeam(SelectableTeam)
-                for(TeamMember:TeamMembers):
+                for(TeamMember:InitializedTeamMembers):
                     TeamSelector.Neutralize(TeamMember)
 
         NumberOfNewTeams := Abs((TeamSelector.GetMaxNumberOfTeams[ParticipantManager.GetInitializedParticipants()] or 0) - TeamsWithMultipleMembersSet.Length)

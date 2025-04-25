@@ -92,7 +92,11 @@ rr_team_selector<public> := class:
         NeutralizedIndex
 
     GetNeutralizedAgents<public>()<transacts>:[]agent =
-        NeutralizedAgents
+        for:
+            NeutralizedAgent:NeutralizedAgents
+            ParticipantManager.IsInitialized[NeutralizedAgent]
+        do:
+            NeutralizedAgent
 
     GetSelectableTeams<public>()<transacts>:[]rr_selectable_team =
         SelectableTeams
@@ -124,9 +128,14 @@ rr_team_selector<public> := class:
     TeleportMembersToTeam<public>():void =
         for:
             TeamIndex -> TeamMembers : GetSelectableTeamIndexMembersMap()
+            InitializedMembers := for:
+                TeamMember:TeamMembers
+                ParticipantManager.IsInitialized[TeamMember]
+            do:
+                TeamMember
             SelectableTeam := GetSelectableTeam[TeamIndex]
         do:
-            TeamMembers.TeleportToOrRespawnAt(SelectableTeam.TeleporterDevices)
+            InitializedMembers.TeleportToOrRespawnAt(SelectableTeam.TeleporterDevices)
         GetNeutralizedAgents().TeleportToOrRespawnAt(NeutralizedTeleporters)
 
     HideAndDisableAllSelectableTeams<public>():void =
