@@ -34,6 +34,7 @@ rr_transition_state_handler<public> := class(fn_gameplay_state_triggerable, fn_g
                     Fail[]
                 set TeamWithPlayers = true
 
+    # TODO: Solos is being triggered when there are just 2 players. 
     Solos()<transacts><decides>:void =
         ParticipantManager.GetInitializedParticipants().Length > 1
         TeamSelector.GetSelectableTeamCapacity() = 1 or ParticipantManager.GetInitializedParticipants().Length < 3

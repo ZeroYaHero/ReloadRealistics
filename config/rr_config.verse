@@ -14,13 +14,11 @@ rr_abstract_config<public> := class<abstract>:
     Scoring<public>:rr_score_config
     POIs<public>:rr_pois_config
     Rounds<public>:rr_rounds_config
+    Storm<public>:rr_storm_config
     LoadoutTags<public>:[]rr_loadout_selector_tags
 
 rr_rounds_config<public> := struct:
     SupplyDropTimesAndQuantities<public>:[]tuple(float, int)
-    InitialStormPhaseRadiusCM<public>:float
-    StormRanges<public>:[]tuple(float, float)
-    StormBeaconTags<public>:[]round_storm_device_tag
 
 rr_teams_config<public> := struct:
     PlayableTeams:[]rr_team_config
@@ -50,12 +48,19 @@ rr_reboot_config<public> := struct:
     RiftHeight:float
     RiftLifetime:float
     HoldToRebootArrowCount:int
-    RebootDurationCycles:[]tuple(float, float)
+    RebootDurationUnlimitedTuples:[]tuple(float, float, logic)
     WipeMessage<localizes>:message
-    RebootBankTags:[]reboot_bank_tag
-    RebootNoBankTag:?reboot_bank_tag
+    RebootBank:?rr_reboot_bank_config
     RebootHealth:float
     RebootShield:float
+
+rr_reboot_bank_config<public> := struct:
+    MaximumRebootBank:int
+    RebootBankTags:[]reboot_bank_tag
+    RebootNoBankTag:reboot_bank_tag
+    RebootInfiniteBankTag:reboot_bank_tag
+    LowOvershieldTag:reboot_bank_tag
+    HighOvershieldTag:reboot_bank_tag
 
 rr_score_config<public> := struct:
     Anchor:vector2
@@ -93,6 +98,17 @@ rr_score_config<public> := struct:
     MaximumScoreSlots:int
     WipedColorMultiplier:float
     ShowOwnerAtMinimum:logic
+
+rr_storm_config<public> := struct:
+    Phases:[]rr_storm_phase_config
+    DelayDuration:float
+
+rr_storm_phase_config<public> := struct:
+    BeaconDeviceTag:rr_storm_phase_tags
+    MinimumMaximumRange:tuple(float, float)
+    WaitDuration:float
+    MoveShrinkDuration:float
+    Radius:float
     
 EnemyTeamWipedMessage<localizes><public>:message = "ENEMY TEAM WIPED"
 EnemyWipedMessage<localizes><public>:message = "ENEMY PLAYER WIPED"

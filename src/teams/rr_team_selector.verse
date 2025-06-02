@@ -8,7 +8,7 @@ using { /Verse.org/Colors }
 using { FN_Gameplay }
 using { scoring }
 
-rr_team_selector<public> := class:
+rr_team_selector<public> := class(ui_component_interface):
     ParticipantManager<public>:rr_participant_manager
     TeamCollection<public>:fort_team_collection
     SelectableTeams<public>:[]rr_selectable_team
@@ -19,6 +19,7 @@ rr_team_selector<public> := class:
     NeutralizedTeleporters<public>:[]teleporter_device
     NeutralizedSFXDevice<public>:audio_player_device
     HUDMessageDevice<public>:hud_message_device
+    TeamSelectUI<public>:popup_dialog_device
     _NeutralizedEvent<private>:event(agent) = event(agent){}
     _TeamSelectedEvent<private>:event(agent) = event(agent){}
     var <private>NeutralizedAgents<private>:[]agent = array{}
@@ -27,7 +28,7 @@ rr_team_selector<public> := class:
 
     # Public 
     Initialize<public>():void =
-        for(SelectableTeam:GetSelectableTeams()):
+        for(SelectableTeam:SelectableTeams):
             spawn{ListenTeamEnterExitEvents(SelectableTeam)}
             HideAndDisableSelectableTeam(SelectableTeam)
 
@@ -68,7 +69,7 @@ rr_team_selector<public> := class:
         if(MaxTeamSize := GetMaxTeamSize[ParticipantManager.GetInitializedParticipants()]):
             loop:
                 for:
-                    IndexMembersPair : SortBy(GetSelectableTeamIndexMembersMap().Items(), TupleSecondLongerComp)
+                    IndexMembersPair:SortBy(GetSelectableTeamIndexMembersMap().Items(), TupleSecondLongerComp)
                     IndexMembersPair(1).Length < MaxTeamSize
                 do:
                     SelectedTeam := SelectTeam(InAgent, IndexMembersPair(0))
@@ -102,9 +103,9 @@ rr_team_selector<public> := class:
         SelectableTeams
 
     GetSelectableTeam<public>(TeamIndex:int)<transacts><decides>:rr_selectable_team =
-        var OpSelectableTeam : ?rr_selectable_team = false
+        var OpSelectableTeam:?rr_selectable_team = false
         loop:
-            for(SelectableTeam : SelectableTeams):
+            for(SelectableTeam:SelectableTeams):
                 if(SelectableTeam.Index = TeamIndex):
                     set OpSelectableTeam = option{SelectableTeam}
                     break
@@ -113,21 +114,21 @@ rr_team_selector<public> := class:
 
     GetSelectableTeamsWithMembersMap<public>()<transacts>:[int][]agent =
         Dict of for:
-            SelectableTeam : GetSelectableTeams()
+            SelectableTeam:SelectableTeams
             SelectableTeamAgents := TeamCollection._GetTeamMembers[SelectableTeam.Index]
         do:
             (SelectableTeam.Index, SelectableTeamAgents)
 
     GetSelectableTeamIndexMembersMap<public>()<transacts>:[int][]agent =
         Dict of for:
-            SelectableTeam : GetSelectableTeams()
+            SelectableTeam:SelectableTeams
             SelectableTeamAgents := TeamCollection._GetTeamMembers[SelectableTeam.Index] or array{}
         do:
             (SelectableTeam.Index, SelectableTeamAgents)
 
     TeleportMembersToTeam<public>():void =
         for:
-            TeamIndex -> TeamMembers : GetSelectableTeamIndexMembersMap()
+            TeamIndex -> TeamMembers:GetSelectableTeamIndexMembersMap()
             InitializedMembers := for:
                 TeamMember:TeamMembers
                 ParticipantManager.IsInitialized[TeamMember]
@@ -139,11 +140,11 @@ rr_team_selector<public> := class:
         GetNeutralizedAgents().TeleportToOrRespawnAt(NeutralizedTeleporters)
 
     HideAndDisableAllSelectableTeams<public>():void =
-        for(SelectableTeam:GetSelectableTeams()):
+        for(SelectableTeam:SelectableTeams):
             HideAndDisableSelectableTeam(SelectableTeam)
 
     RefreshAllPlayerReferences<public>():void =
-        for(SelectableTeam:GetSelectableTeams()):
+        for(SelectableTeam:SelectableTeams):
             RefreshPlayerReferences(SelectableTeam)
         
     # Private
@@ -153,11 +154,7 @@ rr_team_selector<public> := class:
             PlayerReferenceDevice := InSelectableTeam.PlayerReferenceDevices[Index]
             set AgentPlayerReferenceDeviceMap[TeamMember] = option{PlayerReferenceDevice} 
         do:
-            PlayerReferenceDevice.Clear()
-            PlayerReferenceDevice.Clear()
-            PlayerReferenceDevice.Disable()
-            PlayerReferenceDevice.Enable()
-            PlayerReferenceDevice.Register(TeamMember)
+            PlayerReferenceDevice.ToggleEnableRegister(TeamMember)
 
     HideAndDisableSelectableTeam<public>(InSelectableTeam:rr_selectable_team):void =
         if { InSelectableTeam.DisplayTeamSelectorDevice.TeleportTo[InSelectableTeam.DisplayTeamSelectorDevice.GetTransform().TransZ(-384.0)] }
@@ -168,11 +165,9 @@ rr_team_selector<public> := class:
         InSelectableTeam.DisplayTeamSelectorDevice.Disable()
 
         for:
-            PlayerReferenceDevice : InSelectableTeam.PlayerReferenceDevices
+            PlayerReferenceDevice:InSelectableTeam.PlayerReferenceDevices
         do:
-            PlayerReferenceDevice.Clear()
-            PlayerReferenceDevice.Clear()
-            PlayerReferenceDevice.Disable()
+            PlayerReferenceDevice.DisableClear()
 
     ShowAndEnableSelectableTeam<public>(InSelectableTeam:rr_selectable_team):void =
         if { InSelectableTeam.DisplayTeamSelectorDevice.TeleportTo[InSelectableTeam.DisplayTeamSelectorDevice.GetTransform().TransZ(384.0)] }
@@ -183,24 +178,69 @@ rr_team_selector<public> := class:
         InSelectableTeam.DisplayTeamSelectorDevice.Enable()
 
         for:
-            PlayerReferenceDevice : InSelectableTeam.PlayerReferenceDevices
+            PlayerReferenceDevice:InSelectableTeam.PlayerReferenceDevices
         do:
             PlayerReferenceDevice.Enable()
+
+    ShowUIAndAwaitSelection<override>(InAgent:agent)<suspends>:void =
+        loop:
+            ShowUI(InAgent)
+            TeamSelected := TeamSelectUI.RespondingButtonEvent.Await()
+            if:
+                TeamSelected(0) = InAgent
+                SelectableTeam := SelectableTeams[TeamSelected(1)]
+            then:
+                Print("Pressed Button at Index: {TeamSelected(1)}, Which Technically should be Team {TeamSelected(1) + 1}, and is SelectableTeamIndex {SelectableTeam.Index}")
+                SelectedTeam := SelectTeam(InAgent, SelectableTeam.Index)
+                if(SelectedTeam?):
+                    break
+
+    ShowUI<override>(InAgent:agent):void =
+        UpdateTeamSelectUI()
+        TeamSelectUI.Show(InAgent)
+
+    ShowUI<override>():void =
+        UpdateTeamSelectUI()
+        TeamSelectUI.Show()
+
+    HideUI<override>(InAgent:agent):void =
+        TeamSelectUI.Hide(InAgent)
+
+    HideUI<override>():void =
+        TeamSelectUI.Hide()
+
+    UpdateTeamSelectUI<private>():void =
+        for:
+            SelectableTeam:SelectableTeams
+            SelectableTeamAgents := TeamCollection._GetTeamMembers[SelectableTeam.Index]
+        do:
+            TeamMembersMessage := Join of for(I := 1..2):
+                if(TeamMember := SelectableTeamAgents[I - 1]):
+                    PlayerMessage(SelectableTeam.Index, TeamMember)
+                else:
+                    PlayerSlotMessage(I)
+            TeamSelectUI.SetButtonText(TeamMembersMessage, SelectableTeam.Index - 1)
 
     ListenTeamEnterExitEvents<private>(InSelectableTeam:rr_selectable_team)<suspends>:void =
         sync:
             loop:
-                EnteredAgent := InSelectableTeam.MutatorZoneDevice.AgentEntersEvent.Await()
+                EnteredAgent:agent = InSelectableTeam.MutatorZoneDevice.AgentEntersEvent.Await()
                 if(not SelectableTeamHiddenMap[InSelectableTeam.Index]?):
                     Selected := SelectTeam(EnteredAgent, InSelectableTeam.Index)
                     if(not Selected?):
                         HUDMessageDevice.Show(EnteredAgent, FailedToSelectTeamMessage, ?DisplayTime:=2.5)
             loop:
-                ExitedAgent := InSelectableTeam.MutatorZoneDevice.AgentExitsEvent.Await()
+                ExitedAgent:agent= InSelectableTeam.MutatorZoneDevice.AgentExitsEvent.Await()
                 if(not SelectableTeamHiddenMap[InSelectableTeam.Index]?):
                     Neutralize(ExitedAgent)
                     NeutralizedSFXDevice.Play(ExitedAgent)
 
-SelectedTeamMessage<localizes><public>(TeamName:string):message = "Joined Team {TeamName}"
-NeutralizedMessage<localizes><public>:message = "No Team!\nSelect a team or wait for auto selection."
-FailedToSelectTeamMessage<localizes><public>:message = "Too many players on team!\nTry selecting another team."
+    (PlayerReferenceDevice:player_reference_device).DisableClear<private>():void =
+        PlayerReferenceDevice.Clear()
+        PlayerReferenceDevice.Clear()
+        PlayerReferenceDevice.Disable()
+
+    (PlayerReferenceDevice:player_reference_device).ToggleEnableRegister<private>(InAgent:agent):void =
+        PlayerReferenceDevice.DisableClear()
+        PlayerReferenceDevice.Enable()
+        PlayerReferenceDevice.Register(InAgent)

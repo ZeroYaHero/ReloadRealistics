@@ -30,9 +30,12 @@ rr_device := class(creative_device):
         TeamSelector := BuildTeamSelector(ParticipantManager)
         Rebooter := BuildReloadRebooter()
         ScoreController := BuildScoreController(ParticipantManager, TeamSelector)
-        RoundManager := BuildRoundManager(ParticipantManager, ScoreController, Rebooter)
+        LoadoutSelector := BuildLoadoutSelector()
+        StormManager := BuildStormManager()
+        RoundManager := BuildRoundManager(ParticipantManager, ScoreController, Rebooter, LoadoutSelector, StormManager)
         HubManager := BuildHubManager(ParticipantManager)
         ChestManager := BuildChestManager()
+        JIPManager := BuildJIPManager(TeamSelector, LoadoutSelector, Rebooter)
 
         StateMachine.AddStateHandler(BuildWaitingPlayersStateHandler(ParticipantManager, HubManager))
         StateMachine.AddStateHandler(BuildTeamSelectStateHandler(ParticipantManager, TeamSelector, ScoreController))
@@ -40,16 +43,40 @@ rr_device := class(creative_device):
         StateMachine.AddStateHandler(BuildCombatRoundStateHandler(RoundManager, ScoreController))
         StateMachine.AddStateHandler(BuildEndStateHandler(ParticipantManager, HubManager, ScoreController))
 
-        StateMachine.AddStateObserver(ParticipantManager)
+        StateMachine.AddStateObserver(JIPManager)
+
+        ParticipantManager.ParticipantInitializedEvent().SubscribeAwaitable(JIPManager.JoinedInProgress)
+        ParticipantManager.ParticipantExitEvent().SubscribeAwaitable(JIPManager.LeftInProgress)
         
-        if(Configurations.Teams.TeamCapacity > 1):
-            ParticipantManager.ParticipantInitializedEvent().SubscribeAwaitable(TeamSelector.Neutralize)
-        ParticipantManager.ParticipantExitEvent().SubscribeAwaitable(Rebooter.Unregister)
-        
-        for(Participant : GetPlayspace().GetParticipants()):
+        for(Participant:GetPlayspace().GetParticipants()):
             ParticipantManager.OnParticipantEntry(Participant)
 
         StateMachine.Start(?StateToStart:=comparable(rr_state_enum.WaitingForPlayers))
+
+    BuildStormManager<internal>():rr_storm_manager = 
+        rr_storm_manager:
+            AdvancedStormControllerDevice := GetFirstTagged(advanced_storm_controller_tag{}, advanced_storm_controller_device)
+            DelayDuration := Configurations.Storm.DelayDuration
+            StormPhases := BuildStormPhases()
+
+    BuildStormPhases<internal>():[]rr_storm_phase =
+        for:
+            StormPhaseConfig:Configurations.Storm.Phases
+            BeaconDevice := GetTaggedObjects(StormPhaseConfig.BeaconDeviceTag, advanced_storm_beacon_device)[0]
+        do:
+            rr_storm_phase:
+                BeaconDevice := BeaconDevice
+                MinimumMaximumRange := StormPhaseConfig.MinimumMaximumRange
+                WaitDuration := StormPhaseConfig.WaitDuration
+                MoveShrinkDuration := StormPhaseConfig.MoveShrinkDuration
+                Radius := StormPhaseConfig.Radius
+
+    BuildJIPManager<internal>(TeamSelector:rr_team_selector, LoadoutSelector:rr_loadout_selector, RebootController:rebooting.rr_reboot_controller):rr_jip_manager =
+        rr_jip_manager:
+            HUDMessageDevice := GetFirstTagged(generic_hud_message_tag{}, hud_message_device)
+            RebootController := RebootController
+            LoadoutSelector := LoadoutSelector
+            TeamSelector := TeamSelector
 
     BuildWaitingPlayersStateHandler<internal>(ParticipantManager:rr_participant_manager, HubManager:rr_hub_manager):rr_waiting_players_state_handler =
         WaitingPlayersStateHandler := rr_waiting_players_state_handler:
@@ -57,8 +84,8 @@ rr_device := class(creative_device):
             HubManager := HubManager
             WaitingForPlayersTimer := GetFirstTagged(waiting_players_timer_tag{}, timer_device)
             AutoStartMinimum := Configurations.AutoStartMinimum
-            AutoStartVoteUI := GetFirstTagged(auto_start_voting_tag{}, popup_dialog_device)
-            AutoStartVotingTimer := GetFirstTagged(auto_start_voting_tag{}, timer_device)
+            # AutoStartVoteUI := GetFirstTagged(auto_start_voting_tag{}, popup_dialog_device)
+            # AutoStartVotingTimer := GetFirstTagged(auto_start_voting_tag{}, timer_device)
             RebootVanTimer := GetFirstTagged(van_starting_timer_tag{}, timer_device)
             HUDMessageDevice := GetFirstTagged(generic_hud_message_tag{}, hud_message_device)
         WaitingPlayersStateHandler
@@ -98,7 +125,7 @@ rr_device := class(creative_device):
     BuildParticipantManager<internal>():rr_participant_manager =
         ParticipantManager := rr_participant_manager:
             FortPlayspace := GetPlayspace()
-            HUDMessageDevice := GetFirstTagged(generic_hud_message_tag{}, hud_message_device)
+            # HUDMessageDevice := GetFirstTagged(generic_hud_message_tag{}, hud_message_device)
         EntryEvents := array:
             GetFirstTagged(initialize_mutator_tag{}, mutator_zone_device).AgentEntersEvent
         ExitEvents := array:
@@ -108,6 +135,7 @@ rr_device := class(creative_device):
 
     BuildTeamSelector<internal>(ParticipantManager : rr_participant_manager):rr_team_selector = 
         TeamSelector := rr_team_selector:
+            TeamSelectUI := GetFirstTagged(team_select_ui_tag{}, popup_dialog_device)
             ParticipantManager := ParticipantManager
             TeamCollection := GetPlayspace().GetTeamCollection()
             SelectableTeams := BuildSelectableTeams()
@@ -138,44 +166,55 @@ rr_device := class(creative_device):
                 SelectSFXDevice := GetFirstTagged(Tag, audio_player_device)
                 Tag := option{Tag}
 
-    BuildReloadRebooter<internal>():rr_rebooter =
-        rr_rebooter:
-            Config := Configurations.Reboot
+    BuildReloadRebooter<internal>():rebooting.rr_reboot_controller =
+        rebooting.rr_reboot_controller:
             TeamCollection := GetPlayspace().GetTeamCollection()
             DBNODevice := GetFirstTagged(combat_dbno_device{}, down_but_not_out_device)
-            TimeSkipHUD := GetFirstTagged(reboot_time_skip_tag{}, hud_message_device)
-            AllowedHUD := GetFirstTagged(reboot_enabled_hud_tag{}, hud_message_device)
-            DisallowedHUDCorner := GetFirstTagged(reboot_disabled_corner_tag{}, hud_message_device)
-            DisallowedHUDCenter := GetFirstTagged(reboot_disabled_center_tag{}, hud_message_device)
-            RebootsEndingHUDTimerCorner := hud_message_timer:
-                HUDMessageDevice := GetFirstTagged(reboot_status_corner_tag{}, hud_message_device)
-                KeepTimerOnScreenAfterSuccess := option{2.75}
-            RebootsEndingHUDTimerCenter := hud_message_timer:
-                HUDMessageDevice := GetFirstTagged(reboot_status_center_tag{}, hud_message_device)
-            RebootsEndingTimerTickSFX := GetFirstTagged(reboot_timer_sfx_tag{}, audio_player_device)
-            RebootsEndingUrgentTimerTickSFX := GetFirstTagged(reboot_urgent_timer_sfx_tag{}, audio_player_device)
-            WipeHUD := GetFirstTagged(reboot_team_wipe_tag{}, hud_message_device)
-            WipeSFX := GetFirstTagged(reboot_team_wipe_tag{}, audio_player_device)
+            TeleporterDevices := GetTaggedObjects(reboot_sky_tp_tag{}, teleporter_device)
+            RebootDurationUnlimitedTuples := Configurations.Reboot.RebootDurationUnlimitedTuples
+            RebootHealth := Configurations.Reboot.RebootHealth
+            RebootShield := Configurations.Reboot.RebootShield
+            DownPlayerTimeSkip := Configurations.Reboot.DownTimeSkip
+            EliminatePlayerTimeSkip := Configurations.Reboot.EliminationTimeSkip
+            WipeTeamTimeSkip := Configurations.Reboot.WipeTimeSkip
             RiftAsset := RebootRiftAsset
+            RiftLifetime := Configurations.Reboot.RiftLifetime
+            HoldToRebootArrowCount := Configurations.Reboot.HoldToRebootArrowCount
+            TimeSkipHUD := GetFirstTagged(reboot_time_skip_tag{}, hud_message_device)
+            EnableRebootsCornerHUD := GetFirstTagged(reboot_enabled_hud_tag{}, hud_message_device)
+            DisableRebootsCornerHUD := GetFirstTagged(reboot_disabled_corner_tag{}, hud_message_device)
+            DisableRebootsCenterHUD := GetFirstTagged(reboot_disabled_center_tag{}, hud_message_device)
+            LimitRebootsCenterHUD := GetFirstTagged(reboot_limited_center_tag{}, hud_message_device)
+            UnlimitedRebootsCornerHUD := GetFirstTagged(reboot_unlimited_corner_tag{}, hud_message_device)
+            WiperHUD := GetFirstTagged(reboot_team_wiper_tag{}, hud_message_device)
+            WipedHUD := GetFirstTagged(reboot_team_wiped_tag{}, hud_message_device)
+            WipeMessage := Configurations.Reboot.WipeMessage
+            WipedSFX := GetFirstTagged(reboot_team_wiped_tag{}, audio_player_device)
+            WiperSFX := GetFirstTagged(reboot_team_wiper_tag{}, audio_player_device)
             RiftSFX := GetFirstTagged(reboot_rift_sfx_tag{}, audio_player_device)
-            RiftTeleporterDevices := GetTaggedObjects(reboot_sky_tp_tag{}, teleporter_device)
             RebootTimer := hud_message_timer:
                 HUDMessageDevice := GetFirstTagged(reboot_respawn_tag{}, hud_message_device)
-            RebootItemGranter := GetFirstTagged(reboot_granter_tag{}, item_granter_device)
+            LimitingTimer := GetFirstTagged(reboot_limiting_timer_tag{}, timer_device)
+            LimitingTimerStartSFX := GetFirstTagged(reboot_limiting_timer_tag{}, audio_player_device)
+            DisablingTimer := GetFirstTagged(reboot_disabling_timer_tag{}, timer_device)
+            DisablingTimerStartSFX := GetFirstTagged(reboot_disabling_timer_tag{}, audio_player_device)
+            OptionalRebootBank := option{BuildRebootBank[]}
+            RebootGranter := GetFirstTagged(reboot_granter_tag{}, item_granter_device)
+            RiftHeight := Configurations.Reboot.RiftHeight
             RebootMessageFeed := RebootMessageFeed
-            HoldToRebootInputTrigger := GetFirstTagged(reboot_input_tag{}, input_trigger_device)
-            HoldToRebootUI := GetFirstTagged(reboot_input_hud_tag{}, hud_message_device)
-            HoldToRebootUIAnimation := GetFirstTagged(reboot_input_anim_tag{}, hud_message_device)
-            HoldToRebootArrowHUD := GetFirstTagged(reboot_input_arrow_tag{}, hud_message_device)
-            DisallowedSFX := GetFirstTagged(reboot_disallowed_sfx_tag{}, audio_player_device)
-            RebootBanks := for:
-                RebootBankTag:Configurations.Reboot.RebootBankTags
-                RebootBankHUDMessage := GetTaggedObjects(RebootBankTag, hud_message_device)[0]
-            do:
-                RebootBankHUDMessage
-            NoRebootBank := option{GetTaggedObjects(Configurations.Reboot.RebootNoBankTag?, hud_message_device)[0]}
-            OvershieldHalfSelector := GetFirstTagged(reboot_50_over_tag{}, class_and_team_selector_device)
-            OvershieldFullSelector := GetFirstTagged(reboot_100_over_tag{}, class_and_team_selector_device)
+            DisableSFX := GetFirstTagged(reboot_disabled_center_tag{}, audio_player_device)
+            LimitSFX := GetFirstTagged(reboot_limited_center_tag{}, audio_player_device)
+
+    BuildRebootBank<internal>()<transacts><decides>:rebooting.rr_reboot_bank =
+        RebootBankConfig := Configurations.Reboot.RebootBank?
+        rebooting.rr_reboot_bank:
+            MaximumRebootBank := RebootBankConfig.MaximumRebootBank
+            RebootBankHUDMessages := for(HUDMessageTag:RebootBankConfig.RebootBankTags):
+                GetFirstTagged(HUDMessageTag, hud_message_device)
+            NoRebootBankHUDMessage := GetFirstTagged(RebootBankConfig.RebootNoBankTag, hud_message_device)
+            InfiniteRebootBankHUDMessage := GetFirstTagged(RebootBankConfig.RebootInfiniteBankTag, hud_message_device)
+            LowOvershieldClassSelector := GetFirstTagged(RebootBankConfig.LowOvershieldTag, class_and_team_selector_device)
+            HighOvershieldClassSelector := GetFirstTagged(RebootBankConfig.HighOvershieldTag, class_and_team_selector_device)
 
     BuildScoreController<internal>(ParticipantManager:rr_participant_manager, TeamSelector:rr_team_selector):rr_scoring_controller =
         rr_scoring_controller:
@@ -189,7 +228,7 @@ rr_device := class(creative_device):
                 RoundWinHUD := GetFirstTagged(win_round_hud_tag{}, hud_message_device)
                 RoundLoseHUD := GetFirstTagged(lose_round_hud_tag{}, hud_message_device)
 
-    BuildRoundManager<internal>(ParticipantManager:rr_participant_manager, ScoreController : rr_scoring_controller, Rebooter : rr_rebooter):rr_round_manager =
+    BuildRoundManager<internal>(ParticipantManager:rr_participant_manager, ScoreController:rr_scoring_controller, RebootController:rebooting.rr_reboot_controller, LoadoutSelector:rr_loadout_selector, StormManager:rr_storm_manager):rr_round_manager =
         rr_round_manager:
             TeamCapacity := Configurations.Teams.TeamCapacity
             Config := Configurations.Rounds
@@ -197,13 +236,12 @@ rr_device := class(creative_device):
             TeamCollection := GetPlayspace().GetTeamCollection()
             PlayableTeams := Configurations.Teams.PlayableTeams
             ScoreController := ScoreController
-            Rebooter := Rebooter
-            LoadoutSelector := BuildLoadoutSelector()
+            RebootController := RebootController
+            LoadoutSelector := LoadoutSelector
             EliminationManagerDevice := GetFirstTagged(round_elim_manager_tag{}, elimination_manager_device)
             POIs := BuildPOIs()
             DBNODevice := GetFirstTagged(combat_dbno_device{}, down_but_not_out_device)
-            StormDevice := GetFirstTagged(round_storm_device_tag{}, storm_controller_device)
-            StormBeacons := BuildStormBeacons()
+            StormManager := StormManager
             BarrierTimerHUD := hud_message_timer:
                 HUDMessageDevice := GetFirstTagged(round_barrier_tag{}, hud_message_device)
                 Duration:=10.0
@@ -211,13 +249,6 @@ rr_device := class(creative_device):
             SupplyDropSpawners := GetTaggedObjects(round_supply_spawner_tag{}, supply_drop_spawner_device)
             RoundPOIHUD := GetFirstTagged(round_poi_hud_tag{}, hud_message_device)
             POIBarrier := GetFirstTagged(round_barrier_tag{}, barrier_device)
-
-    BuildStormBeacons<internal>():[]advanced_storm_beacon_device =
-        for:
-            StormBeaconTag : Configurations.Rounds.StormBeaconTags
-            StormBeacon := GetTaggedObjects(StormBeaconTag, advanced_storm_beacon_device)[0]
-        do:
-            StormBeacon
         
     BuildLoadoutSelector<internal>():rr_loadout_selector =
         LoadoutSelector := rr_loadout_selector:

@@ -1,3 +1,4 @@
+using { /UnrealEngine.com/Temporary/Diagnostics }
 using { /UnrealEngine.com/Temporary/SpatialMath }
 using { /Fortnite.com/Characters }
 using { /Fortnite.com/Devices }
@@ -13,7 +14,7 @@ using { config }
 rr_round_manager := class(fn_gameplay_round_manager):
     # Objects
     ScoreController:rr_scoring_controller
-    Rebooter:rr_rebooter
+    RebootController:rebooting.rr_reboot_controller
     ParticipantManager:rr_participant_manager
     LoadoutSelector:rr_loadout_selector
     TeamCollection:fort_team_collection
@@ -23,8 +24,9 @@ rr_round_manager := class(fn_gameplay_round_manager):
     POIs:[]rr_poi
     # Devices
     DBNODevice:down_but_not_out_device
-    StormDevice:storm_controller_device
-    StormBeacons:[]advanced_storm_beacon_device
+    # StormDevice:storm_controller_device
+    # StormBeacons:[]advanced_storm_beacon_device
+    StormManager:rr_storm_manager
     SupplyDropSpawners:[]supply_drop_spawner_device
     Config:rr_rounds_config
     BarrierTimerHUD:hud_message_timer
@@ -36,6 +38,7 @@ rr_round_manager := class(fn_gameplay_round_manager):
     var AgentScoreMap:[agent]int = map{}
     var CurrentRoundParticipants:[]agent = array{}
     var RoundCancelables:[]cancelable = array{}
+    DebugDraw:debug_draw = debug_draw{}
 
     HasNextRound<override>()<transacts><decides>:void =
         POIs[RoundNumber]
@@ -50,31 +53,30 @@ rr_round_manager := class(fn_gameplay_round_manager):
             TeamMember
         SetupPOI()
         AwaitTimer(1.0)
-        Rebooter.Enable()
         SetupParticipants()
-        Rebooter.SetDefaultRebootLocation(POIs[RoundNumber].GetCenter().Translation or vector3{})
+        RebootController.SetDefaultRebootTransform(POIs[RoundNumber].GetCenter() or transform{})
         BarrierTimerHUD.StartAndAwaitSuccessAll()
 
     # Setup POI
     SetupPOI()<suspends>:void =
         if:
             POI := POIs[RoundNumber]
-            StormDevice.TeleportTo[POI.GetCenter()]
-            StormBeacons[0].TeleportTo[POI.GetCenter()]
+            # StormDevice.TeleportTo[POI.GetCenter()]
+            # StormBeacons[0].TeleportTo[POI.GetCenter()]
             POIBarrier.TeleportTo[POI.GetCenter().TransZ(-1024.0)]
         then:
             for(Participant : CurrentRoundParticipants):
                 RoundPOIHUD.Show(Participant, RoundPOIMessage(RoundNumber + 1, POI.Name))
-            var LastPosition:vector3 = POI.GetCenter().Translation
-            for:
-                Index -> StormBeacon : StormBeacons
-                Index > 0
-                StormRange := Config.StormRanges[Index - 1]
-                RandomRotation := MakeRotationFromYawPitchRollDegrees(GetRandomFloat(0.0, 360.0), 0.0, 0.0)
-                NewPosition := RandomRotation.GetLocalForward() * GetRandomFloat(StormRange(0), StormRange(1)) + LastPosition
-                StormBeacon.TeleportTo[NewPosition, IdentityRotation()]
-            do:
-                set LastPosition = NewPosition
+            # var LastPosition:vector3 = POI.GetCenter().Translation
+            # for:
+            #     Index -> StormBeacon : StormBeacons
+            #     Index > 0
+            #     StormRange := Config.StormRanges[Index - 1]
+            #     RandomRotation := MakeRotationFromYawPitchRollDegrees(GetRandomFloat(0.0, 360.0), 0.0, 0.0)
+            #     NewPosition := RandomRotation.GetLocalForward() * GetRandomFloat(StormRange(0), StormRange(1)) + LastPosition
+            #     StormBeacon.TeleportTo[NewPosition, IdentityRotation()]
+            # do:
+            #     set LastPosition = NewPosition
             POI.Initialize()
             AwaitTimer(1.0)
 
@@ -89,7 +91,7 @@ rr_round_manager := class(fn_gameplay_round_manager):
             for(SupplyDropSpawner : SupplyDropSpawners):
                 set RoundCancelables += array:
                     SupplyDropSpawner.OpenedEvent.Subscribe(OnSupplyDropOpen)
-            StormDevice.GenerateStorm()
+            StormManager.GenerateStorm(POI.GetCenter().Translation)
 
     # Setup Participants
     SetupParticipants():void =
@@ -97,7 +99,7 @@ rr_round_manager := class(fn_gameplay_round_manager):
             GiveOneSpawn(Participant)
             GrantHealthShield(Participant)
             GrantLoadout(Participant)
-            Rebooter.Register(Participant)
+            RebootController.Register(Participant)
             if(TeamIndex := TeamCollection._GetTeamIndex[Participant]):
                 InitializeTeamCauseCombatEvents(TeamIndex)
 
@@ -120,12 +122,15 @@ rr_round_manager := class(fn_gameplay_round_manager):
     OnRoundBegin<override>()<suspends>:void =
         for(CurrentRoundParticipant:CurrentRoundParticipants):
             BarrierSFX.Play(CurrentRoundParticipant)
-        Rebooter.StartRebootCycle()
+        RebootController.Enable()
         LoadoutSelector.HideUI()
         if(POI := POIs[RoundNumber]):
             POI.DisableBarriers()
         branch:
-            SpawnSupplyDrops() # TODO: Change to cancelable spawns
+            sync:
+                SpawnSupplyDrops()
+                UpdateDefaultRebootLocation()
+                GrantLoadoutsOnReboot()
         CheckRoundEndCondition()
 
     # Check the Round End Condition Repeatedly
@@ -141,7 +146,7 @@ rr_round_manager := class(fn_gameplay_round_manager):
                 ScoreController.RefreshView()
 
                 for(AgentLeft:AgentsLeft):
-                    Rebooter.Unregister(AgentLeft)
+                    RebootController.Unregister(AgentLeft)
                 set AgentsLeft = array{}
 
                 TeamIndexesAlive := Set of for:
@@ -152,7 +157,7 @@ rr_round_manager := class(fn_gameplay_round_manager):
                     TeamIndex
 
                 if(TeamIndexesAlive.Length < 2):
-                    if(TeamCapacity <> 1 or not Rebooter.RebootsInProgress[]):
+                    if(not RebootController.RebootsInProgress[]):
                         for(Participant:CurrentRoundParticipants):
                             if(TeamCollection._GetTeamMembers[TeamIndexesAlive[0]].Find[Participant]):
                                 ScoreController.OnRoundWin(Participant)
@@ -170,22 +175,36 @@ rr_round_manager := class(fn_gameplay_round_manager):
                 SupplyDrop := SupplyDropSpawners[SupplyDropIndex]
                 RandomYaw := GetRandomFloat(0.0, 360.0)
                 RandomRotation := MakeRotationFromYawPitchRollDegrees(RandomYaw, 0.0, 0.0)
-                RandomDistance := GetRandomFloat(0.0, Config.InitialStormPhaseRadiusCM)
-                POICenter := POIs[RoundNumber].GetCenter().Translation
+                RandomDistance := GetRandomFloat(0.0, StormManager.GetStormRadius[])
+                POICenter := StormManager.GetStormCenter[]
                 SupplyDropV3 := RandomRotation.GetLocalForward() * RandomDistance + POICenter
                 SupplyDrop.TeleportTo[SupplyDropV3, IdentityRotation()]
             do:
                 SupplyDrop.Spawn()
                 set SupplyDropIndex += 1
 
+    UpdateDefaultRebootLocation<private>()<suspends>:void =
+        loop:
+            # DebugDraw.Clear()
+            if(StormCenter := StormManager.GetStormCenter[]):
+                RebootController.SetDefaultRebootLocation(StormCenter)
+                # if(Radius := StormManager.GetStormRadius[]):
+                #     DebugDraw.DrawCylinder(StormCenter.SetZ(0.0), StormCenter.SetZ(RebootController.RiftHeight), ?NumSegments := 16, ?Radius := Radius, ?Thickness := 20.0)
+            Sleep(0.0)
+
+    GrantLoadoutsOnReboot<private>()<suspends>:void =
+        loop:
+            Rebooted := RebootController.RebootedEvent().Await()
+            LoadoutSelector.GrantLastSelected(Rebooted)
+
     OnSupplyDropOpen<private>(InAgent:agent):void =
         AwardXP(InAgent, rr_award.OpenSupplyDrop)
 
     # Round End
     OnRoundEnd<override>()<suspends>:void = 
-        Rebooter.Disable()
-        Rebooter.UnregisterAll()
-        StormDevice.DestroyStorm()
+        RebootController.Disable()
+        RebootController.UnregisterAll()
+        StormManager.DestroyStorm()
         for:
             Participant : CurrentRoundParticipants
             FortCharacter := Participant.GetFortCharacter[]

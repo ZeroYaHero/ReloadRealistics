@@ -3,11 +3,10 @@ using { /Fortnite.com/Devices }
 using { /Verse.org/Simulation }
 
 using { FN_Gameplay }
+using { rebooting }
 using { state }
 
-rr_participant_manager := class(fn_gameplay_participant_manager, fn_gameplay_state_observer):
-    var CurrentState:comparable = comparable()
-    HUDMessageDevice:hud_message_device
+rr_participant_manager := class(fn_gameplay_participant_manager):
 
     OnParticipantEntry<override>(InAgent:agent):void =
         (super:)OnParticipantEntry(InAgent)
@@ -52,19 +51,14 @@ rr_participant_manager := class(fn_gameplay_participant_manager, fn_gameplay_sta
             else:
                 Sleep(1.0)
 
-    OnParticipantInitialized<override>(InAgent : agent):void =
-        Print("ON PARTICIPANT INITIALIZED")
-        if(CurrentEnum := ComparableEnumRRStateMap[CurrentState]):
-            Print("GOT CURRENT ENUM FROM COMPARABLE ENUM MAP")
-            case(CurrentEnum):
-                rr_state_enum.CombatRound =>
-                    Print("JOINED DURING COMBAT ROUND")
-                    HUDMessageDevice.Show(InAgent, MiddleOfRoundMessage(InAgent), ?DisplayTime := 3.0)
-                    GiveOneSpawn(InAgent) 
-                    spawn{RepeatAttemptEliminateCharacter(InAgent)}
-                _ =>
-
-    UpdateState<override>(InState:comparable)<transacts>:void =
-        set CurrentState = InState
-
-MiddleOfRoundMessage<localizes><public>(InAgent:agent):message = "Welcome {InAgent}!\nYou joined in the middle of a round!"
+    # OnParticipantInitialized<override>(InAgent : agent):void =
+    #     Print("ON PARTICIPANT INITIALIZED")
+    #     if(CurrentEnum := ComparableEnumRRStateMap[CurrentState]):
+    #         Print("GOT CURRENT ENUM FROM COMPARABLE ENUM MAP")
+    #         case(CurrentEnum):
+    #             rr_state_enum.CombatRound =>
+    #                 Print("JOINED DURING COMBAT ROUND")
+    #                 HUDMessageDevice.Show(InAgent, MiddleOfRoundMessage(InAgent), ?DisplayTime := 3.0)
+    #                 GiveOneSpawn(InAgent) 
+    #                 spawn{RepeatAttemptEliminateCharacter(InAgent)}
+    #             _ =>

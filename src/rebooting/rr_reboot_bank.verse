@@ -2,58 +2,69 @@ using { /Fortnite.com/Devices }
 using { /Verse.org/Simulation }
 using { /Fortnite.com/Teams }
 
-using { FN_Gameplay }
-
-rr_rebooter_interface := interface:
-    IsRebootable<public>(:agent)<transacts><decides>:void
-
-rr_reboot_team := class(rr_rebooter_interface):
-    TeamCollection:fort_team_collection
-
-    IsRebootable<override>(InAgent:agent)<transacts><decides>:void =
-        var HasUpTeammates:logic = false
-        for:
-            UpTeammate:TeamCollection._GetUpTeammates[InAgent]
-        do:
-            set HasUpTeammates = true
-            UpTeammate
-        HasUpTeammates?
-
-rr_reboot_bank := class:
-    MaximumRebootBank:int
-    RebootBankHUDMessages:[]hud_message_device
-    NoRebootBankHUDMessage:hud_message_device
+rr_reboot_bank<public> := class:
+    MaximumRebootBank<public>:int
+    RebootBankHUDMessages<public>:[]hud_message_device
+    NoRebootBankHUDMessage<public>:hud_message_device
+    InfiniteRebootBankHUDMessage<public>:hud_message_device
+    LowOvershieldClassSelector<public>:class_and_team_selector_device
+    HighOvershieldClassSelector<public>:class_and_team_selector_device
     var <private>AgentRebootBankMap<private>:[agent]int = map{}
 
-    HasRebootBank<public>(InAgent:agent)<transacts><decides>:void =
-        AgentRebootBankMap[InAgent] > 0
+    OnEnabledOrRegistered(InAgent:agent):void =
+        SetRebootBank(InAgent, MaximumRebootBank)
 
-    ResetRebootBank<public>(InAgent:agent):void =
-        SetRebootBankIndex(InAgent, MaximumRebootBank)
+    HasRebootsLeft(InAgent:agent)<transacts><decides>:void =
+        GetNumberOfRebootsLeft[InAgent] > 0
 
-    DecrementRebootBank<public>(InAgent:agent):void =
-        if(CurrentRebootBank := GetRebootBank[InAgent]):
-            SetRebootBankIndex(InAgent, CurrentRebootBank - 1)
+    OnReboot(InAgent:agent):void =
+        if(CurrentRebootBank := AgentRebootBankMap[InAgent]):
+            SetRebootBank(InAgent, CurrentRebootBank - 1)
         else:
-            SetRebootBankIndex(InAgent, MaximumRebootBank - 1)
+            SetRebootBank(InAgent, MaximumRebootBank - 1)
 
-    GetRebootBank<public>(InAgent:agent)<transacts><decides>:int =
-        AgentRebootBankMap[InAgent]
+    OnDisallowed():void =
+        for(Agent->RebootBankValue:AgentRebootBankMap):
+            HideRebootBank(Agent)
+            if:
+                NumberOfRebootsLeft := GetNumberOfRebootsLeft[Agent]
+                NumberOfRebootsLeft > 0
+            then:
+                if(NumberOfRebootsLeft > 1):
+                    HighOvershieldClassSelector.ChangeClass(Agent)
+                else:
+                    LowOvershieldClassSelector.ChangeClass(Agent)
+            SetRebootBank(Agent, 0)
 
-    SetRebootBankIndex<public>(InAgent:agent, RebootBank:int):void =
+    OnDisabled():void =
+        set AgentRebootBankMap = map{}
+        for(Agent->RebootBankValue:AgentRebootBankMap):
+            HideRebootBank(Agent)
+
+
+    SetRebootBank<private>(InAgent:agent, RebootBank:int):void =
         if { set AgentRebootBankMap[InAgent] = RebootBank }
+        ShowRebootBankHUD(InAgent)
 
     ShowRebootBankHUD<private>(InAgent:agent):void =
         if(CurrentRebootBank := AgentRebootBankMap[InAgent]):
+            HUDMessageDevice := GetRebootBankHUDMessage(CurrentRebootBank)
+            HUDMessageDevice.Show()
+
+    ShowInfiniteRebootBankHUD<public>(InAgent:agent):void =
+        InfiniteRebootBankHUDMessage.Show(InAgent)
+
+    HideInfiniteRebootBankHUD<public>(InAgent:agent):void =
+        InfiniteRebootBankHUDMessage.Hide(InAgent)
             
     GetRebootBankHUDMessage<private>(RebootBank:int):hud_message_device =
         RebootBankHUDMessages[MaximumRebootBank - RebootBank] or NoRebootBankHUDMessage
 
-rr_rebooting_view := interface:
-    ShowRebootsAllowed():void
-    HideRebootsAllowed():void
-    ShowCausedWipe():void
-    ShowRecievedWipe():void
-    ShowRebootsEnding():void
-    ShowRebootsDisallowed():void
-    HideRebootsDisallowed():void
+    GetNumberOfRebootsLeft<private>(InAgent:agent)<transacts><decides>:int =
+        AgentRebootBankMap[InAgent]
+
+    HideRebootBank<public>(InAgent:agent):void =
+        for(RebootBankHUDMessage:RebootBankHUDMessages):
+            RebootBankHUDMessage.Hide(InAgent)
+        NoRebootBankHUDMessage.Hide(InAgent)
+        InfiniteRebootBankHUDMessage.Hide(InAgent)

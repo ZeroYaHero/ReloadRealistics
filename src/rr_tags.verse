@@ -2,13 +2,16 @@ using { /Verse.org/Simulation/Tags }
 
 rr_round_tags<public> := class(tag){}
     round_barrier_tag := class(rr_round_tags){}
-    round_storm_device_tag<public> := class(rr_round_tags){}
-        round_storm_1_device_tag<public> := class(round_storm_device_tag){}
-        round_storm_2_device_tag<public> := class(round_storm_device_tag){}
-        round_storm_3_device_tag<public> := class(round_storm_device_tag){}
     round_supply_spawner_tag := class(rr_round_tags){}
     round_poi_hud_tag := class(rr_round_tags){}
     round_elim_manager_tag := class(rr_round_tags){}
+
+rr_storm_tags<public> := class(tag){}
+    advanced_storm_controller_tag := class(rr_storm_tags){}
+    rr_storm_phase_tags<public> := class(rr_storm_tags){}
+        storm_1_tag<public> := class(rr_storm_phase_tags){}
+        storm_2_tag<public> := class(rr_storm_phase_tags){}
+        storm_3_tag<public> := class(rr_storm_phase_tags){}
 
 # Loadout Selection
 rr_loadout_selector_tags<public> := class(tag){}
@@ -62,26 +65,27 @@ rr_poi_tags<public> := class(tag){}
 
 rr_reboot_tags := class(tag){}
     reboot_respawn_tag := class(rr_reboot_tags){}
-    reboot_status_center_tag := class(rr_reboot_tags){}
-    reboot_status_corner_tag := class(rr_reboot_tags){}
-    reboot_team_wipe_tag := class(rr_reboot_tags){}
+    reboot_team_wiper_tag := class(rr_reboot_tags){}
+    reboot_team_wiped_tag := class(rr_reboot_tags){}
     reboot_granter_tag := class(rr_reboot_tags){}
     reboot_sky_tp_tag := class(rr_reboot_tags){}
     reboot_disabled_corner_tag := class(rr_reboot_tags){}
     reboot_disabled_center_tag := class(rr_reboot_tags){}
+    reboot_disabling_timer_tag := class(rr_reboot_tags){}
+    reboot_limiting_timer_tag := class(rr_reboot_tags){}
+    reboot_unlimited_corner_tag := class(rr_reboot_tags){}
     reboot_enabled_hud_tag := class(rr_reboot_tags){}
     reboot_input_tag := class(rr_reboot_tags){}
     reboot_input_hud_tag := class(rr_reboot_tags){}
     reboot_input_anim_tag := class(rr_reboot_tags){}
     reboot_input_arrow_tag := class(rr_reboot_tags){}
+    reboot_limited_center_tag := class(rr_reboot_tags){}
     reboot_rift_sfx_tag := class(rr_reboot_tags){}
     reboot_time_skip_tag := class(rr_reboot_tags){}
-    reboot_timer_sfx_tag := class(rr_reboot_tags){}
-    reboot_urgent_timer_sfx_tag := class(rr_reboot_tags){}
-    reboot_disallowed_sfx_tag := class(rr_reboot_tags){}
     reboot_bank_tag<public> := class(rr_reboot_tags){}
-        reboot_50_over_tag := class(rr_reboot_tags){}
-        reboot_100_over_tag := class(rr_reboot_tags){}
+        reboot_50_over_tag<public> := class(reboot_bank_tag){}
+        reboot_100_over_tag<public> := class(reboot_bank_tag){}
+        reboot_unlimited_bank_tag<public> := class(reboot_bank_tag){}
         reboot_no_bank_tag<public> := class(reboot_bank_tag){}
         reboot_bank_1_tag<public> := class(reboot_bank_tag){}
         reboot_bank_2_tag<public> := class(reboot_bank_tag){}
@@ -96,6 +100,7 @@ rr_state_timer_tags := class(tag){}
 rr_team_tags<public> := class(tag){}
     team_prop_tag<public> := class(rr_team_tags){}
     neutral_team_tag := class(rr_team_tags){}
+    team_select_ui_tag := class(rr_team_tags){}
     selectable_teams_tag<public> := class(rr_team_tags){}
         team_one_tag<public> := class(selectable_teams_tag){}
         team_two_tag<public> := class(selectable_teams_tag){}

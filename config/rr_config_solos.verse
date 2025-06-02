@@ -67,16 +67,25 @@ rr_config_solos<public> := class(rr_abstract_config):
         RiftLifetime<override> := 10.0
         HoldToRebootArrowCount<override> := 2
         WipeMessage<override> := EnemyWipedMessage
-        RebootDurationCycles<override> := array:
-            (1.0, 15.0)
-            (3.0, 30.0)
-            (4.0, 45.0)
-            (5.0, 60.0)
-        RebootBankTags<override> := array:
-            reboot_bank_1_tag{}
-            reboot_bank_2_tag{}
-            reboot_bank_3_tag{}
-        RebootNoBankTag<override> := option{reboot_no_bank_tag{}}
+        RebootDurationUnlimitedTuples<override> := array:
+            (1.0, 30.0, true)
+            (2.0, 60.0, true)
+            (2.0, 15.0, false)
+            (3.0, 30.0, false)
+            (5.0, 45.0, false)
+            (7.0, 60.0, false)
+        RebootBank<override> := option:
+            rr_reboot_bank_config:
+                MaximumRebootBank<override> := 3
+                RebootBankTags<override> := array:
+                    reboot_bank_1_tag{}
+                    reboot_bank_2_tag{}
+                    reboot_bank_3_tag{}
+                RebootNoBankTag<override> := reboot_no_bank_tag{}
+                RebootInfiniteBankTag<override> := reboot_unlimited_bank_tag{}
+                LowOvershieldTag<override> := reboot_50_over_tag{}
+                HighOvershieldTag<override> := reboot_100_over_tag{}
+            
         RebootHealth := 100.0
         RebootShield := 50.0
 
@@ -103,15 +112,6 @@ rr_config_solos<public> := class(rr_abstract_config):
             (10.0, 2)
             (45.0, 2)
             (45.0, 2)
-        InitialStormPhaseRadiusCM<override>:= 8500.0 
-        StormRanges<override>:= array:
-            (512.0, 1024.0)
-            (2048.0, 4096.0)
-        StormBeaconTags<override>:= array:
-            round_storm_1_device_tag{}
-            round_storm_2_device_tag{}
-            round_storm_3_device_tag{}
-
     Scoring<override>:rr_score_config = rr_score_config:
         Anchor<override>:=vector2{X := 0.0, Y := 0.0}
         Alignment<override>:=vector2{X := 0.0, Y := 0.0}
@@ -153,6 +153,28 @@ rr_config_solos<public> := class(rr_abstract_config):
         WipedColorMultiplier<override>:=0.025
         ShowOwnerAtMinimum<override>:=true
         ShowPlayerCount<override>:=false
+
+    Storm<override>:rr_storm_config = rr_storm_config:
+        DelayDuration := 10.0
+        Phases := array:
+            rr_storm_phase_config:
+                BeaconDeviceTag := storm_1_tag{}
+                MinimumMaximumRange := (0.0, 0.0)
+                WaitDuration := 90.0
+                MoveShrinkDuration := 60.0
+                Radius := 8500.0
+            rr_storm_phase_config:
+                BeaconDeviceTag := storm_2_tag{}
+                MinimumMaximumRange := (512.0, 1024.0)
+                WaitDuration := 15.0
+                MoveShrinkDuration := 60.0
+                Radius := 4500.0
+            rr_storm_phase_config:
+                BeaconDeviceTag := storm_3_tag{}
+                MinimumMaximumRange := (2048.0, 4096.0)
+                WaitDuration := 10.0
+                MoveShrinkDuration := 60.0
+                Radius := 0.0
 
     LoadoutTags<override> : []rr_loadout_selector_tags = array:
         loadout_1_tag{}

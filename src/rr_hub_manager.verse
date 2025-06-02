@@ -5,4 +5,4 @@ using { FN_Gameplay }
 
 rr_hub_manager := class:
     WinnerRematchProp:creative_prop
-    SpawnTeleporters : []teleporter_device
+    SpawnTeleporters:[]teleporter_device

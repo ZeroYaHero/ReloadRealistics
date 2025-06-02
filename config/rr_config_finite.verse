@@ -69,16 +69,14 @@ rr_config_finite := class(rr_abstract_config):
         RiftLifetime<override> := 10.0
         HoldToRebootArrowCount<override> := 2
         WipeMessage<override> := EnemyWipedMessage
-        RebootDurationCycles<override> := array:
-            (1.0, 15.0)
-            (3.0, 30.0)
-            (4.0, 45.0)
-            (5.0, 60.0)
-        RebootBankTags<override> := array:
-            reboot_bank_1_tag{}
-            reboot_bank_2_tag{}
-            reboot_bank_3_tag{}
-        RebootNoBankTag<override> := option{reboot_no_bank_tag{}}
+        RebootDurationUnlimitedTuples<override> := array:
+            (1.0, 30.0, true)
+            (2.0, 60.0, true)
+            (2.0, 15.0, false)
+            (3.0, 30.0, false)
+            (5.0, 45.0, false)
+            (7.0, 60.0, false)
+        RebootBank<override> := false
         RebootHealth := 100.0
         RebootShield := 50.0
 
@@ -105,14 +103,6 @@ rr_config_finite := class(rr_abstract_config):
             (10.0, 2)
             (45.0, 2)
             (45.0, 2)
-        InitialStormPhaseRadiusCM<override>:= 8500.0 
-        StormRanges<override>:= array:
-            (512.0, 1024.0)
-            (2048.0, 4096.0)
-        StormBeaconTags<override>:= array:
-            round_storm_1_device_tag{}
-            round_storm_2_device_tag{}
-            round_storm_3_device_tag{}
 
     Scoring<override>:rr_score_config = rr_score_config:
         Anchor<override>:=vector2{X := 0.0, Y := 0.0}

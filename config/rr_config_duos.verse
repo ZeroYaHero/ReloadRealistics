@@ -57,13 +57,14 @@ rr_config_duos<public> := class(rr_abstract_config):
         RiftLifetime<override> := 10.0
         HoldToRebootArrowCount<override> := 2
         WipeMessage<override> := EnemyTeamWipedMessage
-        RebootDurationCycles<override> := array:
-            (1.0, 15.0)
-            (3.0, 30.0)
-            (5.0, 45.0)
-            (7.0, 60.0)
-        RebootBankTags<override> := array{}
-        RebootNoBankTag<override> := false
+        RebootDurationUnlimitedTuples<override> := array:
+            (1.0, 30.0, true)
+            (2.0, 60.0, true)
+            (2.0, 15.0, false)
+            (3.0, 30.0, false)
+            (5.0, 45.0, false)
+            (7.0, 60.0, false)
+        RebootBank<override> := false
         RebootHealth := 100.0
         RebootShield := 50.0
 
@@ -88,14 +89,6 @@ rr_config_duos<public> := class(rr_abstract_config):
             (10.0, 2)
             (45.0, 2)
             (45.0, 2)
-        InitialStormPhaseRadiusCM<override>:= 8500.0 
-        StormRanges<override>:= array:
-            (512.0, 1024.0)
-            (2048.0, 4096.0)
-        StormBeaconTags<override>:= array:
-            round_storm_1_device_tag{}
-            round_storm_2_device_tag{}
-            round_storm_3_device_tag{}
 
     Scoring<override>:rr_score_config = rr_score_config:
         Anchor<override>:=vector2{X := 1.0, Y := 0.0}
@@ -139,7 +132,28 @@ rr_config_duos<public> := class(rr_abstract_config):
         ShowOwnerAtMinimum<override>:=true
         ShowPlayerCount<override>:=true
 
-    LoadoutTags<override> : []rr_loadout_selector_tags = array:
+    Storm<override>:rr_storm_config = rr_storm_config:
+        DelayDuration := 10.0
+        Phases := array:
+            rr_storm_phase_config:
+                BeaconDeviceTag := storm_1_tag{}
+                MinimumMaximumRange := (0.0, 0.0)
+                WaitDuration := 90.0
+                MoveShrinkDuration := 60.0
+                Radius := 8500.0
+            rr_storm_phase_config:
+                BeaconDeviceTag := storm_2_tag{}
+                MinimumMaximumRange := (512.0, 1024.0)
+                WaitDuration := 15.0
+                MoveShrinkDuration := 60.0
+                Radius := 4500.0
+            rr_storm_phase_config:
+                BeaconDeviceTag := storm_3_tag{}
+                MinimumMaximumRange := (2048.0, 4096.0)
+                WaitDuration := 10.0
+                MoveShrinkDuration := 60.0
+                Radius := 0.0
+    LoadoutTags<override>:[]rr_loadout_selector_tags = array:
         loadout_1_tag{}
         loadout_2_tag{}
         loadout_3_tag{}

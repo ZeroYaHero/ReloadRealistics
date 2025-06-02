@@ -3,7 +3,7 @@ using { /Verse.org/Simulation }
 using { /Fortnite.com/Devices }
 using { FN_Gameplay }
 
-rr_loadout_selector := class:
+rr_loadout_selector := class(ui_component_interface):
 
     WeaponSelectDialog : popup_dialog_device
     KeepSelectDialog : popup_dialog_device
@@ -45,17 +45,41 @@ rr_loadout_selector := class:
                 else if:
                     set KeepSelection[AgentIndex(0)] = false
 
-    ShowUI(InAgent : agent):void =
+    ShowUIAndAwaitSelection<override>(InAgent:agent)<suspends>:void =
+        ShowUI(InAgent)
+        race:
+            loop:
+                AgentIndex := WeaponSelectDialog.RespondingButtonEvent.Await()
+                if(AgentIndex(0) = InAgent):
+                    spawn{GrantLoadout(AgentIndex(0), AgentIndex(1), true)}
+                    break
+            loop:
+                DismissedAgent := WeaponSelectDialog.DismissedEvent.Await()
+                if(DismissedAgent = InAgent):
+                    if(not CurrentlyBeingGrantedItems.Find[DismissedAgent]):
+                        GrantLastSelected(DismissedAgent)
+                    break
+        loop:
+            AgentIndex := KeepSelectDialog.RespondingButtonEvent.Await()
+            if(AgentIndex(0) = InAgent):
+                if:
+                    AgentIndex(1) = 0
+                    set KeepSelection[AgentIndex(0)] = true
+                else if:
+                    set KeepSelection[AgentIndex(0)] = false
+                break
+
+    ShowUI<override>(InAgent : agent):void =
         WeaponSelectDialog.Show(InAgent)
 
-    ShowUI():void =
+    ShowUI<override>():void =
         WeaponSelectDialog.Show()
 
-    HideUI(InAgent : agent):void =
+    HideUI<override>(InAgent : agent):void =
         WeaponSelectDialog.Hide(InAgent)
         KeepSelectDialog.Hide(InAgent)
 
-    HideUI():void =
+    HideUI<override>():void =
         WeaponSelectDialog.Hide()
         KeepSelectDialog.Hide()
 
