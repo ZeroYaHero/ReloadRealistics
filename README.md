@@ -12,7 +12,7 @@
 
 ## Demo
 
-[![DemoVideo](assets/T_OldReloadThumbnail.png)(https://drive.google.com/file/d/1sA9eJmMIDfVD0K1vPLSju1Y-F2VxwNab/view?usp=sharing)]
+[![DemoVideo](assets/T_OldReloadThumbnail.png)](https://drive.google.com/file/d/1sA9eJmMIDfVD0K1vPLSju1Y-F2VxwNab/view?usp=sharing)
 
 ## Gallery
 
