@@ -9,22 +9,20 @@
 </div>
 
 > [!IMPORTANT]
-> This the last snapshot of Reload Realistics before it was taken offline (around late 2025). There are aspects of this code that would not work anymore due to new UEFN/Verse versions. There are also many aspects of this code that could be improved or done differently. Nonetheless, I find it is good to keep for reference.
+> This is the last snapshot of Reload Realistics before it was taken offline (around late 2025). There are aspects of this code that would not work anymore due to new UEFN/Verse versions. There are also many aspects of this code that could be improved or done differently.
 
-This repo contains the the Verse source code for Reload Realistics, a game published in Fortnite's UGC ecosystem in mid 2025 using Unreal Editor for Fortnite (UEFN) and Verse. The game was inspired by the release of Fortnite Reload a year prior, with the goal of being slightly *faster* and arcade-y.
+This repo contains the Verse source code for Reload Realistics. It was a game published in Fortnite's UGC ecosystem in mid 2025 using Unreal Editor for Fortnite (UEFN). The game was inspired by the release of Fortnite Reload a year prior, with the goal of being slightly *faster* and more arcade-y.
 
 <div align="center">
 <img src="assets/T_LobbyBackground.png" height="300">
 </div>
-
-> These images are the only aspect of the projects visual identity I did not contribute on my own. Though, it contains the logo and the logo 3D model that I created. This was done by a seperate Blender artist hired by a content creator I was collaborating with.
 
 ## [Gameplay Video](https://drive.google.com/file/d/1sA9eJmMIDfVD0K1vPLSju1Y-F2VxwNab/view?usp=sharing)
 
 [![DemoVideo](assets/T_OldReloadThumbnail.png)](https://drive.google.com/file/d/1sA9eJmMIDfVD0K1vPLSju1Y-F2VxwNab/view?usp=sharing)
 
 > [!IMPORTANT]
-> This image is a video of gameplay. Clicking on the image or [here](https://drive.google.com/file/d/1sA9eJmMIDfVD0K1vPLSju1Y-F2VxwNab/view?usp=sharing) will bring you to a Google Drive video of the gameplay.
+> This image is a video of gameplay. Clicking on the image or [here](https://drive.google.com/file/d/1sA9eJmMIDfVD0K1vPLSju1Y-F2VxwNab/view?usp=sharing) will bring you to a Google Drive video.
 
 ## Gallery
 
