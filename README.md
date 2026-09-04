@@ -117,6 +117,30 @@ Scoring was unique because its a round based gamemode where players are able to 
 
 ## UI and HUD
 
+### Item Selection
+
+I designed these holographic buttons inspired by the already holographic/techy look that Epic Games' original mode was giving. I am really proud of this UI even though it was extremely limited. I think this still looks good given the time as it matched the moment that overall Fortnite Reload game was in.
+
+<img src="assets/T_HoloButtons.gif">
+
+---
+
+### Notifications
+
+Notifications I made mirroring the style of the Reload HUD elements. Nothing was imported. These were all recreated in UMG and material graph.
+
+#### Reboots disabled
+
+<img src="assets/NoMoreRespawns.gif">
+
+#### Infinite reboots
+
+<img src="assets/ScrollingRainbowUnlimited.gif">
+
+#### Infinite-to-limited reboots
+
+<img src="assets/UnlimitedToLimitedRespawns.gif">
+
 ---
 
 ### Team Scoring
@@ -129,6 +153,9 @@ Scoring HUD was managed with a model-view-controller adjacent approach. Its not 
 <img src="assets/T_Scoreboard.png">
 
 Here you can see a scoreboard HUD that is ordered by score left-to-righ (with the first place getting a crown) denoting the number of players the team has alive as well as the team the viewer belongs to.
+
+> [!WARNING]
+> If you are on lightmode you will have trouble seeing the following assets.
 
 #### Assets V2
 
@@ -154,33 +181,6 @@ Here are the assets I used for the team scoring created in Adobe Illustrator. Th
 <img src="assets/T_TeamBlock.png" width="128">
 <img src="assets/T_TeamBlockYou.png" width="128">
 <img src="assets/T_YouUnder.png" width="128">
-
----
-
-### Item Selection
-
-I designed these holographic buttons inspired by the already holographic/techy look that Epic Games' original mode was giving. I am really proud of this UI even though it was extremely limited. I think this still looks good given the time as it matched the moment that overall Fortnite Reload game was in.
-
-<img src="assets/T_HoloButtons.gif">
-
----
-
-### Notifications
-
-Notifications I made mirroring the style of the Reload HUD elements. Nothing was imported. These were all recreated in UMG and material graph.
-
-#### Reboots disabled
-
-<img src="assets/NoMoreRespawns.gif">
-
-#### Infinite reboots
-
-<img src="assets/ScrollingRainbowUnlimited.gif">
-
-#### Infinite-to-limited reboots
-
-<img src="assets/UnlimitedToLimitedRespawns.gif">
-
 
 ---
 
